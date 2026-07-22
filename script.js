@@ -1210,7 +1210,6 @@ function generateLeaderboardMarkdownTable(results, sortOrder = 'points-desc') {
   return [headerLine, separatorLine, ...dataLines].join('\n');
 }
 
-// --- Chi Slider & Text Click Handlers ---
 function setupChiInput(valueElId, sliderElId) {
   const valueEl = document.getElementById(valueElId);
   const sliderEl = document.getElementById(sliderElId);
@@ -1221,7 +1220,10 @@ function setupChiInput(valueElId, sliderElId) {
     valueEl.textContent = e.target.value;
   });
 
-  valueEl.addEventListener('click', () => {
+  // Attach click handler to the parent label/container if it exists, fallback to valueEl
+  const clickTarget = valueEl.closest('label') || valueEl.parentElement || valueEl;
+
+  clickTarget.addEventListener('click', () => {
     const currentVal = valueEl.textContent;
     const input = prompt('Enter Holes Exponent (χ value 1 to 1000):', currentVal);
 
