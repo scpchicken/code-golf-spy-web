@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+  </div>
 
   <div class="container">
     <h1>Code Golf Leaderboard & Comparison</h1>
@@ -33,10 +37,11 @@
           <label for="sortOrderInput">Initial Sort Order</label>
           <select id="sortOrderInput">
             <option value="u1-desc">User 1 Score (High to Low)</option>
-            <option value="diff-desc">Largest Diff (U1 - U2 Descending)</option>
-            <option value="diff-asc">Largest Diff (U1 - U2 Ascending)</option>
-            <option value="alpha-asc">Hole Name (A to Z)</option>
-            <option value="alpha-desc">Hole Name (Z to A)</option>
+            <option value="u2-desc">User 2 Score (High to Low)</option>
+            <option value="diff-desc">Score Diff (U1 - U2) (High to Low)</option>
+            <option value="diff-asc">Score Diff (U2 - U1) (Low to High)</option>
+            <option value="alpha-asc">Hole Name (A-Z)</option>
+            <option value="alpha-desc">Hole Name (Z-A)</option>
           </select>
         </div>
 
@@ -82,10 +87,11 @@
         <input type="text" id="tableSearch" class="search-bar" placeholder="Filter holes...">
         <select id="activeSortSelect" class="sort-select">
           <option value="u1-desc">User 1 Score (High to Low)</option>
-          <option value="diff-desc">Largest Diff (U1 - U2 Descending)</option>
-          <option value="diff-asc">Largest Diff (U1 - U2 Ascending)</option>
-          <option value="alpha-asc">Hole Name (A to Z)</option>
-          <option value="alpha-desc">Hole Name (Z to A)</option>
+          <option value="u2-desc">User 2 Score (High to Low)</option>
+          <option value="diff-desc">Score Diff (U1 - U2) (High to Low)</option>
+          <option value="diff-asc">Score Diff (U2 - U1) (Low to High)</option>
+          <option value="alpha-asc">Hole Name (A-Z)</option>
+          <option value="alpha-desc">Hole Name (Z-A)</option>
         </select>
       </div>
 

@@ -2,6 +2,23 @@ const UNSET_BYTE = 696969420;
 const GITHUB_HISTORY_URL = `https://github.com/scpchicken/code-golf-history/tree/main/${new Date().getFullYear()}`;
 let globalProcessedData = null;
 
+// Loading Screen Control
+function showLoading() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// Keyboard Shortcut: Ctrl + Enter (or Cmd + Enter on Mac) to click GO!
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('goBtn').click();
+  }
+});
+
 // Utility: Trigger download of JSON object or string
 function triggerDownload(content, fileName) {
   const jsonStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
@@ -58,26 +75,33 @@ async function getOrFetchJson(fileInput, targetUrl, label) {
 
 // Download Button Listeners
 document.getElementById('dlHolesBtn').addEventListener('click', async () => {
+  showLoading();
   try {
     const fileInput = document.getElementById('holesFile');
     const data = await getOrFetchJson(fileInput, 'https://code.golf/api/holes', 'holes.json');
     triggerDownload(data, 'holes.json');
   } catch (err) {
     alert(err.message);
+  } finally {
+    hideLoading();
   }
 });
 
 document.getElementById('dlLangsBtn').addEventListener('click', async () => {
+  showLoading();
   try {
     const fileInput = document.getElementById('langsFile');
     const data = await getOrFetchJson(fileInput, 'https://code.golf/api/langs', 'langs.json');
     triggerDownload(data, 'langs.json');
   } catch (err) {
     alert(err.message);
+  } finally {
+    hideLoading();
   }
 });
 
 document.getElementById('dlSolutionsBtn').addEventListener('click', async () => {
+  showLoading();
   try {
     const fileInput = document.getElementById('submissionsFile');
     const data = await getOrFetchJson(fileInput, 'https://code.golf/scores/all-holes/all-langs/all', 'solutions.json');
@@ -86,6 +110,8 @@ document.getElementById('dlSolutionsBtn').addEventListener('click', async () => 
     if (confirm(`${err.message}\n\nWould you like to open GitHub to download solutions.json from the history repository?`)) {
       window.open(GITHUB_HISTORY_URL, '_blank');
     }
+  } finally {
+    hideLoading();
   }
 });
 
@@ -117,6 +143,10 @@ document.getElementById('goBtn').addEventListener('click', async () => {
     return;
   }
 
+  showLoading();
+  // Brief delay to allow browser to render the loading overlay before heavy JS calculations
+  await new Promise(r => setTimeout(r, 50));
+
   try {
     const [submissionsData, holesData, langsData] = await Promise.all([
       readJsonFile(subFileInput),
@@ -139,6 +169,8 @@ document.getElementById('goBtn').addEventListener('click', async () => {
     renderData(initialSort);
   } catch (err) {
     alert(err.message);
+  } finally {
+    hideLoading();
   }
 });
 
@@ -205,7 +237,9 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
     const key = `${parts[0]}::${parts[1]}`;
     const login = parts[2];
 
-    if (!holeLangUsers.has(key)) holeLangUsers.set(key, []);
+    if (!holeLangUsers.has(key)) {
+      holeLangUsers.set(key, []);
+    }
     holeLangUsers.get(key).push({ login, byte });
   }
 
@@ -233,7 +267,7 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
   }
 
   function getUserHoleResult(hole, targetLogin) {
-    if (!targetLogin) return { lang: "N/A", point: 0, medal: "" };
+    if (!targetLogin) return { lang: "-", point: 0, medal: "" };
 
     const candidates = [];
     const holeByteMin = globalHoleMin.get(hole);
@@ -263,7 +297,7 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
     }
 
     if (candidates.length === 0) {
-      return { lang: "N/A", point: 0, medal: "" };
+      return { lang: "-", point: 0, medal: "" };
     }
 
     candidates.sort((a, b) => {
@@ -275,7 +309,7 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
     const roundedPoint = Math.round(best.point);
 
     if (roundedPoint === 0) {
-      return { lang: "N/A", point: 0, medal: "" };
+      return { lang: "-", point: 0, medal: "" };
     }
 
     return {
@@ -313,7 +347,7 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
       u1Lang: u1Res.lang,
       u1Point: u1Res.point,
       u1Medal: u1Res.medal,
-      u2Lang: u2Res ? u2Res.lang : "N/A",
+      u2Lang: u2Res ? u2Res.lang : "-",
       u2Point: u2Res ? u2Res.point : 0,
       u2Medal: u2Res ? u2Res.medal : "",
       diff
@@ -339,6 +373,9 @@ function renderData(sortOption) {
   const statsContainer = document.getElementById('statsContainer');
   statsContainer.innerHTML = '';
 
+  const u1ProfileUrl = `https://code.golf/golfers/${encodeURIComponent(data.u1Name)}`;
+  const u2ProfileUrl = data.u2Name ? `https://code.golf/golfers/${encodeURIComponent(data.u2Name)}` : '';
+
   if (data.hasUser2) {
     const diffTotal = data.u1TotalScore - data.u2TotalScore;
     const diffSign = diffTotal > 0 ? `+${diffTotal.toLocaleString()}` : diffTotal.toLocaleString();
@@ -346,11 +383,19 @@ function renderData(sortOption) {
     statsContainer.innerHTML = `
       <div class="stat-box">
         <div class="val">${data.u1TotalScore.toLocaleString()}</div>
-        <div class="lbl">${escapeHtml(data.u1Name)} (${data.u1SolvedCount} solved)</div>
+        <div class="lbl">
+          <a href="${u1ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
+            ${escapeHtml(data.u1Name)} (${data.u1SolvedCount} solved)
+          </a>
+        </div>
       </div>
       <div class="stat-box">
         <div class="val">${data.u2TotalScore.toLocaleString()}</div>
-        <div class="lbl">${escapeHtml(data.u2Name)} (${data.u2SolvedCount} solved)</div>
+        <div class="lbl">
+          <a href="${u2ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
+            ${escapeHtml(data.u2Name)} (${data.u2SolvedCount} solved)
+          </a>
+        </div>
       </div>
       <div class="stat-box">
         <div class="val ${diffTotal > 0 ? 'diff-pos' : diffTotal < 0 ? 'diff-neg' : 'diff-zero'}">${diffSign}</div>
@@ -365,7 +410,11 @@ function renderData(sortOption) {
       </div>
       <div class="stat-box">
         <div class="val">${data.u1SolvedCount}</div>
-        <div class="lbl">HOLES SOLVED</div>
+        <div class="lbl">
+          <a href="${u1ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
+            ${escapeHtml(data.u1Name)} (${data.u1SolvedCount} solved)
+          </a>
+        </div>
       </div>
     `;
   }
@@ -400,26 +449,32 @@ function renderData(sortOption) {
   sortedRows.forEach(row => {
     const tr = document.createElement('tr');
 
-    const u1LangDisplay = row.u1Lang + (row.u1Medal ? ` <span class="medal">${row.u1Medal}</span>` : '');
-    const u2LangDisplay = row.u2Lang + (row.u2Medal ? ` <span class="medal">${row.u2Medal}</span>` : '');
+    const holeUrl = `https://code.golf/${encodeURIComponent(row.hole)}`;
+    const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(row.hole)}</strong></a>`;
+
+    const u1LangDisplay = formatLangDisplay(row.hole, row.u1Lang, row.u1Medal);
+    const u1ScoreDisplay = formatScoreDisplay(row.hole, row.u1Lang, row.u1Point);
+
+    const u2LangDisplay = formatLangDisplay(row.hole, row.u2Lang, row.u2Medal);
+    const u2ScoreDisplay = formatScoreDisplay(row.hole, row.u2Lang, row.u2Point);
 
     if (data.hasUser2) {
       const diffClass = row.diff > 0 ? 'diff-pos' : row.diff < 0 ? 'diff-neg' : 'diff-zero';
       const diffText = row.diff > 0 ? `+${row.diff.toLocaleString()}` : row.diff.toLocaleString();
 
       tr.innerHTML = `
-        <td><strong>${escapeHtml(row.hole)}</strong></td>
+        <td>${holeDisplay}</td>
         <td>${u1LangDisplay}</td>
-        <td><strong>${row.u1Point.toLocaleString()}</strong></td>
+        <td>${u1ScoreDisplay}</td>
         <td>${u2LangDisplay}</td>
-        <td><strong>${row.u2Point.toLocaleString()}</strong></td>
+        <td>${u2ScoreDisplay}</td>
         <td class="${diffClass}">${diffText}</td>
       `;
     } else {
       tr.innerHTML = `
-        <td><strong>${escapeHtml(row.hole)}</strong></td>
+        <td>${holeDisplay}</td>
         <td>${u1LangDisplay}</td>
-        <td><strong>${row.u1Point.toLocaleString()}</strong></td>
+        <td>${u1ScoreDisplay}</td>
       `;
     }
     tbody.appendChild(tr);
@@ -429,10 +484,27 @@ function renderData(sortOption) {
   applySearchFilter();
 }
 
+function formatLangDisplay(hole, lang, medal) {
+  if (!lang || lang === "N/A" || lang === "-") return "-";
+  const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(lang)}`;
+  const medalHtml = medal ? ` <span class="medal">${medal}</span>` : '';
+  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>${medalHtml}`;
+}
+
+function formatScoreDisplay(hole, lang, point) {
+  if (!point || point <= 0 || !lang || lang === "N/A" || lang === "-") {
+    return `<strong>${(point || 0).toLocaleString()}</strong>`;
+  }
+  const scoreUrl = `https://code.golf/rankings/holes/${encodeURIComponent(hole)}/${encodeURIComponent(lang)}/bytes`;
+  return `<a href="${scoreUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean"><strong>${point.toLocaleString()}</strong></a>`;
+}
+
 function sortRows(rows, sortOption) {
   switch (sortOption) {
     case 'u1-desc':
       return rows.sort((a, b) => b.u1Point - a.u1Point || a.hole.localeCompare(b.hole));
+    case 'u2-desc':
+      return rows.sort((a, b) => b.u2Point - a.u2Point || a.hole.localeCompare(b.hole));
     case 'diff-desc':
       return rows.sort((a, b) => b.diff - a.diff || a.hole.localeCompare(b.hole));
     case 'diff-asc':

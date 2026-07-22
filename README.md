@@ -2,3 +2,6 @@
 spy on other people's home page on code.golf and do score comparisons
 
 Site Link: https://scpchicken.github.io/code-golf-spy-web/
+
+[Inspiration](https://github.com/acotis/holier-than-thou)
+[Original](https://github.com/scpchicken/codegolf-spy)
