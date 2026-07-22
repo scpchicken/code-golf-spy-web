@@ -85,15 +85,18 @@
           </div>
 
           <div class="form-group">
-            <label for="sortOrderInput">Initial Sort Order</label>
-            <select id="sortOrderInput">
-              <option value="u1-desc">User 1 Score (High to Low)</option>
-              <option value="u2-desc">User 2 Score (High to Low)</option>
-              <option value="diff-desc">Score Diff (U1 - U2) (High to Low)</option>
-              <option value="diff-asc">Score Diff (U2 - U1) (Low to High)</option>
-              <option value="alpha-asc">Hole Name (A-Z)</option>
-              <option value="alpha-desc">Hole Name (Z-A)</option>
-            </select>
+            <label for="chiSlider">
+              Holes Exponent (χ): <strong><span id="chiValue" style="cursor: pointer; text-decoration: underline dotted;" title="Click to manually enter a value (1–1000)">1</span></strong>
+            </label>
+            <input 
+              type="range" 
+              id="chiSlider" 
+              min="1" 
+              max="30" 
+              step="0.5" 
+              value="1"
+              title="1 = Standard Average, higher values favor quality over quantity"
+            >
           </div>
 
           <div class="form-group">
@@ -190,6 +193,22 @@
               <option value="min999">Ultra (999 Min): ((N + 998) / (N + 999)) * S + (1 / (N + 999)) * Sa Sb</option>
               <option value="min1000">Max (1000 Min): Flat 1000 Base (No Solver Penalty)</option>
             </select>
+          </div>
+
+          <!-- Chi Exponent Slider Option -->
+          <div class="form-group">
+            <label for="lbChiSlider">
+              Holes Exponent (χ): <strong><span id="lbChiValue" style="cursor: pointer; text-decoration: underline dotted;" title="Click to manually enter a value (1–1000)">1</span></strong>
+            </label>
+            <input 
+              type="range" 
+              id="lbChiSlider" 
+              min="1" 
+              max="30" 
+              step="0.5" 
+              value="1"
+              title="1 = Standard Average, higher values favor quality over quantity"
+            >
           </div>
         </div>
 

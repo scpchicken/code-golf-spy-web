@@ -1,7 +1,26 @@
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
 
+function calculateHolePowerMean(holeScores, totalHoles, chi) {
+  if (totalHoles === 0) return 0;
+
+  // Standard Arithmetic Sum across all holes (chi = 1)
+  if (chi === 1) {
+    return holeScores.reduce((acc, score) => acc + score, 0);
+  }
+
+  // Pure Maximum scaled by number of holes (chi >= 100)
+  if (chi >= 100) {
+    return Math.max(...holeScores, 0) * totalHoles;
+  }
+
+  // Generalized Power Mean multiplied by total holes
+  const sumPow = holeScores.reduce((acc, score) => acc + Math.pow(score, chi), 0);
+  const mean = Math.pow(sumPow / totalHoles, 1 / chi);
+  return mean * totalHoles;
+}
+
 document.getElementById('leaderboardUsersLabel')?.addEventListener('click', (e) => {
-  e.preventDefault(); // Prevents default input focus jump issues
+  e.preventDefault();
   const input = document.getElementById('leaderboardUsersInput');
   if (input) {
     input.value = DEFAULT_GOLFERS_LIST;
@@ -26,11 +45,11 @@ document.addEventListener('keydown', (e) => {
 
 // --- Helper Functions ---
 function showLoading() {
-  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('loadingOverlay')?.classList.remove('hidden');
 }
 
 function hideLoading() {
-  document.getElementById('loadingOverlay').classList.add('hidden');
+  document.getElementById('loadingOverlay')?.classList.add('hidden');
 }
 
 function escapeHtml(str) {
@@ -83,7 +102,7 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   }
 }
 
-// --- Solutions Modal Handling (Avoids Popup Blockers) ---
+// --- Solutions Modal Handling ---
 const solutionsModal = document.getElementById('solutionsModal');
 
 function handleSolutionsDownload() {
@@ -115,14 +134,14 @@ const navLeaderboardBtn = document.getElementById('navLeaderboardBtn');
 const comparePage = document.getElementById('comparePage');
 const leaderboardPage = document.getElementById('leaderboardPage');
 
-navCompareBtn.addEventListener('click', () => {
+navCompareBtn?.addEventListener('click', () => {
   navCompareBtn.classList.add('active');
   navLeaderboardBtn.classList.remove('active');
   comparePage.classList.remove('hidden');
   leaderboardPage.classList.add('hidden');
 });
 
-navLeaderboardBtn.addEventListener('click', () => {
+navLeaderboardBtn?.addEventListener('click', () => {
   navLeaderboardBtn.classList.add('active');
   navCompareBtn.classList.remove('active');
   leaderboardPage.classList.remove('hidden');
@@ -130,9 +149,9 @@ navLeaderboardBtn.addEventListener('click', () => {
 });
 
 // Download Help Buttons
-document.getElementById('dlSolutionsBtn').addEventListener('click', handleSolutionsDownload);
-document.getElementById('dlHolesBtn').addEventListener('click', () => window.open('https://code.golf/api/holes', '_blank'));
-document.getElementById('dlLangsBtn').addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
+document.getElementById('dlSolutionsBtn')?.addEventListener('click', handleSolutionsDownload);
+document.getElementById('dlHolesBtn')?.addEventListener('click', () => window.open('https://code.golf/api/holes', '_blank'));
+document.getElementById('dlLangsBtn')?.addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
 
 // Global State
 let lastCompareResults = null;
@@ -141,17 +160,22 @@ let lastLeaderboardResults = [];
 // ==========================================
 // PAGE 1: Golfer Comparison Logic
 // ==========================================
-document.getElementById('goBtn').addEventListener('click', async () => {
-  const subFileInput = document.getElementById('submissionsFile').files[0];
-  const u1Name = document.getElementById('user1Input').value.trim();
-  const u2Name = document.getElementById('user2Input').value.trim();
+document.getElementById('goBtn')?.addEventListener('click', async () => {
+  const subFileInput = document.getElementById('submissionsFile')?.files?.[0];
+  const u1Name = document.getElementById('user1Input')?.value.trim() || '';
+  const u2Name = document.getElementById('user2Input')?.value.trim() || '';
   const scoringMode = getScoringMode();
-  const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard'; // <-- READ FORMULA
-  const langFilter = document.getElementById('langFilterInput').value.trim().toLowerCase();
-  const sortOrder = document.getElementById('sortOrderInput').value;
+  const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard';
+  const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || 1);
+  const langFilter = (document.getElementById('langFilterInput')?.value || '').trim().toLowerCase();
+  
+  // Fixed: changed sortOrderInput -> activeSortSelect and added default fallback
+  const activeSortEl = document.getElementById('activeSortSelect');
+  const sortOrder = activeSortEl ? activeSortEl.value : 'u1-desc';
+
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
-  const includeExperimental = document.getElementById('experimentalCheck').checked;
+  const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
 
   if (!subFileInput) {
     handleSolutionsDownload();
@@ -179,22 +203,37 @@ document.getElementById('goBtn').addEventListener('click', async () => {
       u2Name,
       scoringMode,
       formulaType,
+      chiExponent,
       langFilter,
       holesJson: holesData,
       langsJson: langsData,
       includeExperimental
     });
 
-    document.getElementById('activeSortSelect').value = sortOrder;
+    if (activeSortEl) {
+      activeSortEl.value = sortOrder;
+    }
     renderCompareResults(lastCompareResults, sortOrder);
-    document.getElementById('dlResultsBtn').classList.remove('hidden');
+    document.getElementById('dlResultsBtn')?.classList.remove('hidden');
   } catch (err) {
     alert(err.message);
   } finally {
     hideLoading();
   }
 });
-function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType = 'standard', langFilter, holesJson, langsJson, includeExperimental }) {
+
+function processCompareData({ 
+  jsonData, 
+  u1Name, 
+  u2Name, 
+  scoringMode, 
+  formulaType = 'standard', 
+  chiExponent = 1, 
+  langFilter, 
+  holesJson, 
+  langsJson, 
+  includeExperimental 
+}) {
   const u1Lower = u1Name.toLowerCase();
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
@@ -272,16 +311,14 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
     }
   }
 
-  // --- Medal Calculations (Diamond 💎 / Gold 🥇 / Silver 🥈 / Bronze 🥉) ---
+  // --- Medals ---
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
     const parts = userLangKey.split("::");
     const key = `${parts[0]}::${parts[1]}`;
     const loginLower = parts[2];
 
-    if (!holeLangUsers.has(key)) {
-      holeLangUsers.set(key, []);
-    }
+    if (!holeLangUsers.has(key)) holeLangUsers.set(key, []);
     holeLangUsers.get(key).push({ login: loginLower, byte });
   }
 
@@ -293,16 +330,11 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
       const current = users[i];
       const strictlyFewer = users.filter(u => u.byte < current.byte).length;
       const place = strictlyFewer + 1;
-      const tiedCount = users.filter(u => u.byte === current.byte).length;
 
       let medal = "";
-      if (place === 1) {
-        medal = tiedCount === 1 ? "💎" : "🥇";
-      } else if (place === 2) {
-        medal = "🥈";
-      } else if (place === 3) {
-        medal = "🥉";
-      }
+      if (place === 1) medal = "🥇";
+      else if (place === 2) medal = "🥈";
+      else if (place === 3) medal = "🥉";
 
       medalsMap.set(`${key}::${current.login}`, medal);
     }
@@ -340,13 +372,8 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
       }
     }
 
-    if (candidates.length === 0) {
-      return { lang: "-", point: 0, medal: "" };
-    }
+    if (candidates.length === 0) return { lang: "-", point: 0, medal: "" };
 
-    // Sort candidates:
-    // 1. Highest points end up at the end of the array.
-    // 2. If points tie, smaller byte count ends up at the end of the array.
     candidates.sort((a, b) => {
       if (a.point !== b.point) return a.point - b.point;
       if (a.loginByte !== b.loginByte) return b.loginByte - a.loginByte;
@@ -356,9 +383,7 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
     const best = candidates[candidates.length - 1];
     const roundedPoint = Math.round(best.point);
 
-    if (roundedPoint === 0) {
-      return { lang: "-", point: 0, medal: "" };
-    }
+    if (roundedPoint === 0) return { lang: "-", point: 0, medal: "" };
 
     return {
       lang: best.lang,
@@ -368,22 +393,24 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
   }
 
   const allHoles = Array.from(globalHoleMin.keys()).sort();
+  const totalHolesCount = allHoles.length;
   const rows = [];
-  let u1TotalScore = 0, u1SolvedCount = 0;
-  let u2TotalScore = 0, u2SolvedCount = 0;
+  
+  const u1Scores = [];
+  const u2Scores = [];
+  let u1SolvedCount = 0;
+  let u2SolvedCount = 0;
 
   for (const hole of allHoles) {
     const u1Res = getUserHoleResult(hole, u1Lower);
     const u2Res = hasUser2 ? getUserHoleResult(hole, u2Lower) : null;
 
-    if (u1Res.point > 0) {
-      u1TotalScore += u1Res.point;
-      u1SolvedCount++;
-    }
+    u1Scores.push(u1Res.point);
+    if (u1Res.point > 0) u1SolvedCount++;
 
-    if (u2Res && u2Res.point > 0) {
-      u2TotalScore += u2Res.point;
-      u2SolvedCount++;
+    if (hasUser2) {
+      u2Scores.push(u2Res.point);
+      if (u2Res.point > 0) u2SolvedCount++;
     }
 
     const diff = u1Res.point - (u2Res ? u2Res.point : 0);
@@ -400,6 +427,10 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
     });
   }
 
+  // Compute aggregated scores multiplying power mean by totalHolesCount
+  const u1TotalScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
+  const u2TotalScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
+
   return {
     rows,
     u1Name,
@@ -409,7 +440,8 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType
     u2TotalScore,
     u2SolvedCount,
     hasUser2,
-    scoringMode
+    scoringMode,
+    chiExponent
   };
 }
 
@@ -542,28 +574,28 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode) {
 }
 
 // Re-render listeners
-document.getElementById('activeSortSelect').addEventListener('change', (e) => {
+document.getElementById('activeSortSelect')?.addEventListener('change', (e) => {
   if (lastCompareResults) {
     renderCompareResults(lastCompareResults, e.target.value);
   }
 });
 
-document.getElementById('tableSearch').addEventListener('input', () => {
+document.getElementById('tableSearch')?.addEventListener('input', () => {
   if (lastCompareResults) {
     const sortOrder = document.getElementById('activeSortSelect').value;
     renderCompareResults(lastCompareResults, sortOrder);
   }
 });
 
-// Scoring Mode Switch listener -> re-triggers analysis if clicked
+// Scoring Mode Switch listener -> re-triggers analysis if file is loaded
 document.getElementById('scoringSelect')?.addEventListener('change', () => {
-  if (document.getElementById('submissionsFile').files[0]) {
-    document.getElementById('goBtn').click();
+  if (document.getElementById('submissionsFile')?.files[0]) {
+    document.getElementById('goBtn')?.click();
   }
 });
 
 // Download Results JSON
-document.getElementById('dlResultsBtn').addEventListener('click', () => {
+document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
   const jsonStr = JSON.stringify(lastCompareResults.rows, null, 2);
   const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -580,9 +612,12 @@ document.getElementById('dlResultsBtn').addEventListener('click', () => {
 // ==========================================
 // PAGE 2: Custom Leaderboard Logic (Bytes Only)
 // ==========================================
-document.getElementById('lbGoBtn').addEventListener('click', async () => {
+document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const inputVal = document.getElementById('leaderboardUsersInput').value.trim();
   const formulaType = document.getElementById('scoringFormulaSelect')?.value || 'standard';
+  
+  // Fixed: Target lbChiValue span text instead of lbChiSlider element
+  const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
   
   const subFileInput = document.getElementById('submissionsFile').files[0];
   const holesFileInput = document.getElementById('holesFile');
@@ -620,7 +655,8 @@ document.getElementById('lbGoBtn').addEventListener('click', async () => {
       holesData,
       langsData,
       includeExperimental,
-      formulaType
+      formulaType,
+      chiExponent
     );
 
     renderLeaderboard(lastLeaderboardResults);
@@ -631,7 +667,7 @@ document.getElementById('lbGoBtn').addEventListener('click', async () => {
   }
 });
 
-function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard') {
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard', chiExponent = 1) {
   const targetMap = new Map();
   targetUsers.forEach(u => targetMap.set(u.toLowerCase(), u));
 
@@ -690,9 +726,9 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   }
 
   const allHoles = Array.from(globalHoleMin.keys());
+  const totalHolesCount = allHoles.length;
   const leaderboard = [];
   
-  // Determine offsets based on selected formula
   let offset1 = 2.0;
   let offset2 = 3.0;
   let isFlat1000 = false;
@@ -711,14 +747,14 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   }
 
   for (const [targetLower, displayName] of targetMap.entries()) {
-    let totalPoints = 0;
     let totalBytes = 0;
     let holesSolved = 0;
+    const userScores = [];
 
     for (const hole of allHoles) {
       const holeByteMin = globalHoleMin.get(hole);
       let bestHolePoint = 0;
-      let bestHoleByte = Infinity; // Change initial value from 0 to Infinity
+      let bestHoleByte = Infinity;
 
       for (const [langKey, langStat] of globalLangStats.entries()) {
         if (!langKey.startsWith(`${hole}::`)) continue;
@@ -747,15 +783,17 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
         }
       }
 
-      if (bestHolePoint > 0) {
-        const roundedPoint = Math.round(bestHolePoint);
-        if (roundedPoint > 0) {
-          totalPoints += roundedPoint;
-          totalBytes += bestHoleByte;
-          holesSolved++;
-        }
+      const roundedPoint = bestHolePoint > 0 ? Math.round(bestHolePoint) : 0;
+      userScores.push(roundedPoint);
+
+      if (roundedPoint > 0) {
+        totalBytes += bestHoleByte;
+        holesSolved++;
       }
     }
+
+    // Calculate total points applying power mean scaled across total holes |H|
+    const totalPoints = Math.round(calculateHolePowerMean(userScores, totalHolesCount, chiExponent));
 
     leaderboard.push({
       name: displayName,
@@ -791,13 +829,13 @@ function renderLeaderboard(results) {
     tbody.appendChild(tr);
   });
 
-  document.getElementById('lbResultsCard').classList.remove('hidden');
+  document.getElementById('lbResultsCard')?.classList.remove('hidden');
 }
 
 // ==========================================
 // TXT Export Feature
 // ==========================================
-document.getElementById('exportLbTxtBtn').addEventListener('click', () => {
+document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
     alert("No leaderboard data to export!");
     return;
@@ -853,3 +891,37 @@ function downloadTxtFile(filename, text) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// --- Chi Slider & Text Click Handlers ---
+function setupChiInput(valueElId, sliderElId) {
+  const valueEl = document.getElementById(valueElId);
+  const sliderEl = document.getElementById(sliderElId);
+
+  if (!valueEl || !sliderEl) return;
+
+  // 1. Update text when slider moves
+  sliderEl.addEventListener('input', (e) => {
+    valueEl.textContent = e.target.value;
+  });
+
+  // 2. Click text to manually enter a number from 1 to 1000
+  valueEl.addEventListener('click', () => {
+    const currentVal = valueEl.textContent;
+    const input = prompt('Enter Holes Exponent (χ) value (1 to 1000):', currentVal);
+
+    if (input !== null) {
+      const num = parseFloat(input);
+      if (!isNaN(num) && num >= 1 && num <= 1000) {
+        valueEl.textContent = num;
+        // Sync slider position if value is within slider bounds
+        sliderEl.value = Math.min(num, parseFloat(sliderEl.max));
+      } else {
+        alert('Please enter a valid number between 1 and 1000.');
+      }
+    }
+  });
+}
+
+// Initialize both Chi controls
+setupChiInput('chiValue', 'chiSlider');
+setupChiInput('lbChiValue', 'lbChiSlider');
