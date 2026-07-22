@@ -73,6 +73,16 @@
               <option value="chars">Chars</option>
             </select>
           </div>
+          <div class="form-group">
+            <label for="compareScoringFormulaSelect">Scoring Formula</label>
+            <select id="compareScoringFormulaSelect">
+              <option value="standard">Standard (750 Min): ((N + 2) / (N + 3)) * S + (1 / (N + 3)) * Sa Sb</option>
+              <option value="alt">Alternative (900 Min): ((N + 8) / (N + 9)) * S + (1 / (N + 9)) * Sa Sb</option>
+              <option value="min950">High (950 Min): ((N + 18) / (N + 19)) * S + (1 / (N + 19)) * Sa Sb</option>
+              <option value="min999">Ultra (999 Min): ((N + 998) / (N + 999)) * S + (1 / (N + 999)) * Sa Sb</option>
+              <option value="min1000">Max (1000 Min): Flat 1000 Base (No Solver Penalty)</option>
+            </select>
+          </div>
 
           <div class="form-group">
             <label for="sortOrderInput">Initial Sort Order</label>
@@ -155,7 +165,14 @@
 
         <div class="grid-form">
           <div class="form-group" style="grid-column: 1 / -1;">
-            <label for="leaderboardUsersInput">Golfers to Rank (Comma-separated)</label>
+            <label 
+              for="leaderboardUsersInput" 
+              id="leaderboardUsersLabel" 
+              style="cursor: pointer; user-select: none;" 
+              title="Click to autofill default golfers"
+            >
+              Golfers to Rank (Comma-separated) <span style="font-size: 0.8em; opacity: 0.75;">✨ Click here to autofill</span>
+            </label>
             <input 
               type="text" 
               id="leaderboardUsersInput" 

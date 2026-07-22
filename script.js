@@ -1,3 +1,14 @@
+const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
+
+document.getElementById('leaderboardUsersLabel')?.addEventListener('click', (e) => {
+  e.preventDefault(); // Prevents default input focus jump issues
+  const input = document.getElementById('leaderboardUsersInput');
+  if (input) {
+    input.value = DEFAULT_GOLFERS_LIST;
+    input.focus();
+  }
+});
+
 // --- Keyboard Shortcuts (Ctrl+Enter / Cmd+Enter) ---
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -135,6 +146,7 @@ document.getElementById('goBtn').addEventListener('click', async () => {
   const u1Name = document.getElementById('user1Input').value.trim();
   const u2Name = document.getElementById('user2Input').value.trim();
   const scoringMode = getScoringMode();
+  const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard'; // <-- READ FORMULA
   const langFilter = document.getElementById('langFilterInput').value.trim().toLowerCase();
   const sortOrder = document.getElementById('sortOrderInput').value;
   const holesFileInput = document.getElementById('holesFile');
@@ -166,6 +178,7 @@ document.getElementById('goBtn').addEventListener('click', async () => {
       u1Name,
       u2Name,
       scoringMode,
+      formulaType,
       langFilter,
       holesJson: holesData,
       langsJson: langsData,
@@ -181,11 +194,28 @@ document.getElementById('goBtn').addEventListener('click', async () => {
     hideLoading();
   }
 });
-
-function processCompareData({ jsonData, u1Name, u2Name, scoringMode, langFilter, holesJson, langsJson, includeExperimental }) {
+function processCompareData({ jsonData, u1Name, u2Name, scoringMode, formulaType = 'standard', langFilter, holesJson, langsJson, includeExperimental }) {
   const u1Lower = u1Name.toLowerCase();
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
+
+  // Setup formula offsets
+  let offset1 = 2.0;
+  let offset2 = 3.0;
+  let isFlat1000 = false;
+
+  if (formulaType === 'alt') {
+    offset1 = 8.0;
+    offset2 = 9.0;
+  } else if (formulaType === 'min950') {
+    offset1 = 18.0;
+    offset2 = 19.0;
+  } else if (formulaType === 'min999') {
+    offset1 = 998.0;
+    offset2 = 999.0;
+  } else if (formulaType === 'min1000') {
+    isFlat1000 = true;
+  }
 
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
@@ -298,13 +328,15 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, langFilter,
         let point = 0;
         if (langFilter) {
           point = (holeByteMin / loginByte) * 1000.0;
+        } else if (isFlat1000) {
+          point = (langByteMin / loginByte) * 1000.0;
         } else {
-          const sb = ((sqrtN + 2.0) / (sqrtN + 3.0)) * langByteMin + (1.0 / (sqrtN + 3.0)) * holeByteMin;
+          const sb = ((sqrtN + offset1) / (sqrtN + offset2)) * langByteMin + (1.0 / (sqrtN + offset2)) * holeByteMin;
           point = (sb / loginByte) * 1000.0;
         }
 
         const medal = medalsMap.get(userLangKey) || "";
-        candidates.push({ lang, point, medal });
+        candidates.push({ lang, point, medal, loginByte });
       }
     }
 
@@ -312,9 +344,13 @@ function processCompareData({ jsonData, u1Name, u2Name, scoringMode, langFilter,
       return { lang: "-", point: 0, medal: "" };
     }
 
+    // Sort candidates:
+    // 1. Highest points end up at the end of the array.
+    // 2. If points tie, smaller byte count ends up at the end of the array.
     candidates.sort((a, b) => {
       if (a.point !== b.point) return a.point - b.point;
-      return a.lang.localeCompare(b.lang);
+      if (a.loginByte !== b.loginByte) return b.loginByte - a.loginByte;
+      return b.lang.localeCompare(a.lang);
     });
 
     const best = candidates[candidates.length - 1];
