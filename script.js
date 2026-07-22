@@ -1,8 +1,9 @@
-const UNSET_BYTE = 696969420;
-const GITHUB_HISTORY_URL = `https://github.com/scpchicken/code-golf-history/tree/main/${new Date().getFullYear()}`;
-let globalProcessedData = null;
+const GITHUB_HISTORY_URL = "https://github.com/code-golf/code-golf/blob/master/dump/results.json.zst";
 
-// Loading Screen Control
+let lastCompareResults = null;
+let lastLeaderboardResults = [];
+
+// --- Helper Functions ---
 function showLoading() {
   document.getElementById('loadingOverlay').classList.remove('hidden');
 }
@@ -11,145 +12,79 @@ function hideLoading() {
   document.getElementById('loadingOverlay').classList.add('hidden');
 }
 
-// Keyboard Shortcut: Ctrl + Enter (or Cmd + Enter on Mac) to click GO!
-document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    document.getElementById('goBtn').click();
-  }
-});
-
-// Utility: Trigger download of JSON object or string
-function triggerDownload(content, fileName) {
-  const jsonStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
-  const blob = new Blob([jsonStr], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-// Read local file as JSON
 function readJsonFile(file) {
   return new Promise((resolve, reject) => {
-    if (!file) return resolve(null);
     const reader = new FileReader();
     reader.onload = e => {
-      try { resolve(JSON.parse(e.target.result)); }
-      catch (err) { reject(new Error(`Failed to parse ${file.name}`)); }
+      try {
+        resolve(JSON.parse(e.target.result));
+      } catch (err) {
+        reject(new Error(`Failed to parse JSON in file: ${file.name}`));
+      }
     };
-    reader.onerror = () => reject(new Error(`Error reading ${file.name}`));
+    reader.onerror = () => reject(new Error(`Error reading file: ${file.name}`));
     reader.readAsText(file);
   });
 }
 
-// Fetch JSON with CORS proxy fallback and cache-busting
-async function getOrFetchJson(fileInput, targetUrl, label) {
-  if (fileInput && fileInput.files[0]) {
+async function getOrFetchJson(fileInput, fetchUrl, fileName) {
+  if (fileInput && fileInput.files && fileInput.files[0]) {
     return await readJsonFile(fileInput.files[0]);
   }
-
-  // 1. Add a unique timestamp to force proxies & browser to fetch fresh data
-  const cacheBuster = `t=${Date.now()}`;
-  const urlWithCacheBuster = targetUrl.includes('?') 
-    ? `${targetUrl}&${cacheBuster}` 
-    : `${targetUrl}?${cacheBuster}`;
-
-  // 2nd Attempt options to bypass browser cache
-  const fetchOptions = { cache: 'no-store' };
-
-  // 1st Attempt: Direct fetch
   try {
-    const response = await fetch(urlWithCacheBuster, fetchOptions);
-    if (response.ok) return await response.json();
-  } catch (directErr) {
-    console.warn(`Direct fetch failed for ${targetUrl}, trying proxy...`);
+    const resp = await fetch(fetchUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}. Falling back to default behavior.`);
+    return null;
   }
-
-  // 2nd Attempt: Fetch via CORS proxy with cache buster
-  try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlWithCacheBuster)}`;
-    const response = await fetch(proxyUrl, fetchOptions);
-    if (response.ok) return await response.json();
-  } catch (proxyErr) {
-    console.error(`Proxy fetch also failed for ${targetUrl}`);
-  }
-
-  throw new Error(`Could not fetch ${label} directly from browser due to CORS security.`);
 }
 
-// Download Button Listeners
-document.getElementById('dlHolesBtn').addEventListener('click', async () => {
-  showLoading();
-  try {
-    const fileInput = document.getElementById('holesFile');
-    const data = await getOrFetchJson(fileInput, 'https://code.golf/api/holes', 'holes.json');
-    triggerDownload(data, 'holes.json');
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    hideLoading();
-  }
+// --- Tab Navigation Switcher ---
+const navCompareBtn = document.getElementById('navCompareBtn');
+const navLeaderboardBtn = document.getElementById('navLeaderboardBtn');
+const comparePage = document.getElementById('comparePage');
+const leaderboardPage = document.getElementById('leaderboardPage');
+
+navCompareBtn.addEventListener('click', () => {
+  navCompareBtn.classList.add('active');
+  navLeaderboardBtn.classList.remove('active');
+  comparePage.classList.remove('hidden');
+  leaderboardPage.classList.add('hidden');
 });
 
-document.getElementById('dlLangsBtn').addEventListener('click', async () => {
-  showLoading();
-  try {
-    const fileInput = document.getElementById('langsFile');
-    const data = await getOrFetchJson(fileInput, 'https://code.golf/api/langs', 'langs.json');
-    triggerDownload(data, 'langs.json');
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    hideLoading();
-  }
+navLeaderboardBtn.addEventListener('click', () => {
+  navLeaderboardBtn.classList.add('active');
+  navCompareBtn.classList.remove('active');
+  leaderboardPage.classList.remove('hidden');
+  comparePage.classList.add('hidden');
 });
 
-document.getElementById('dlSolutionsBtn').addEventListener('click', async () => {
-  showLoading();
-  
-  // 1. Open blank tab immediately during the user's click event
-  let fallbackTab = null;
+// Download Help Buttons
+document.getElementById('dlSolutionsBtn').addEventListener('click', () => window.open(GITHUB_HISTORY_URL, '_blank'));
+document.getElementById('dlHolesBtn').addEventListener('click', () => window.open('https://code.golf/api/holes', '_blank'));
+document.getElementById('dlLangsBtn').addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
 
-  try {
-    const fileInput = document.getElementById('submissionsFile');
-    const data = await getOrFetchJson(fileInput, 'https://code.golf/scores/all-holes/all-langs/all', 'solutions.json');
-    triggerDownload(data, 'solutions.json');
-  } catch (err) {
-    const curlCmd = 'curl -k -L https://code.golf/scores/all-holes/all-langs/all -o solutions.json';
-
-    // 2. Ask user, and only open URL in the pre-created tab if confirmed
-    if (confirm(
-      `Failed to download solutions.json:\n${err.message}\n\n` +
-      `• Click OK to open GitHub history repository.\n` +
-      `• Click Cancel to copy the terminal curl command to your clipboard.`
-    )) {
-      window.open(GITHUB_HISTORY_URL, '_blank'); // Or redirect current window: window.location.href = GITHUB_HISTORY_URL;
-    } else {
-      navigator.clipboard.writeText(curlCmd).catch(() => {});
-    }
-  } finally {
-    hideLoading();
-  }
-});
-
-// Download Results JSON
-document.getElementById('dlResultsBtn').addEventListener('click', () => {
-  if (!globalProcessedData) return;
-  triggerDownload(globalProcessedData.rows, 'code_golf_results.json');
-});
-
-// GO! Button Listener
+// ==========================================
+// PAGE 1: Golfer Comparison Logic
+// ==========================================
 document.getElementById('goBtn').addEventListener('click', async () => {
   const subFileInput = document.getElementById('submissionsFile').files[0];
-  const user1 = document.getElementById('user1Input').value.trim();
-  const user2 = document.getElementById('user2Input').value.trim();
-  const langFilter = document.getElementById('langFilterInput').value.trim() || null;
-  const initialSort = document.getElementById('sortOrderInput').value;
+  const u1Name = document.getElementById('user1Input').value.trim();
+  const u2Name = document.getElementById('user2Input').value.trim();
+  const langFilter = document.getElementById('langFilterInput').value.trim().toLowerCase();
+  const sortOrder = document.getElementById('sortOrderInput').value;
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
   const includeExperimental = document.getElementById('experimentalCheck').checked;
@@ -160,13 +95,13 @@ document.getElementById('goBtn').addEventListener('click', async () => {
     }
     return;
   }
-  if (!user1) {
-    alert("Please enter at least Username 1.");
+
+  if (!u1Name) {
+    alert("Please specify Username 1.");
     return;
   }
 
   showLoading();
-  // Brief delay to allow browser to render the loading overlay before heavy JS calculations
   await new Promise(r => setTimeout(r, 50));
 
   try {
@@ -176,19 +111,19 @@ document.getElementById('goBtn').addEventListener('click', async () => {
       getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
     ]);
 
-    globalProcessedData = processGolfData(
-      submissionsData,
-      user1,
-      user2,
+    lastCompareResults = processCompareData({
+      jsonData: submissionsData,
+      u1Name,
+      u2Name,
       langFilter,
-      holesData,
-      langsData,
+      holesJson: holesData,
+      langsJson: langsData,
       includeExperimental
-    );
+    });
 
-    document.getElementById('activeSortSelect').value = initialSort;
+    document.getElementById('activeSortSelect').value = sortOrder;
+    renderCompareResults(lastCompareResults, sortOrder);
     document.getElementById('dlResultsBtn').classList.remove('hidden');
-    renderData(initialSort);
   } catch (err) {
     alert(err.message);
   } finally {
@@ -196,8 +131,9 @@ document.getElementById('goBtn').addEventListener('click', async () => {
   }
 });
 
-function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJson, includeExperimental) {
-  const hasUser2 = Boolean(u2Name);
+function processCompareData({ jsonData, u1Name, u2Name, langFilter, holesJson, langsJson, includeExperimental }) {
+  const u1Lower = u1Name.toLowerCase();
+  const u2Lower = u2Name ? u2Name.toLowerCase() : null;
 
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
@@ -222,14 +158,318 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
   const userBestSubmissions = new Map();
 
   for (const x of jsonData) {
+    const scoring = x.scoring;
+    const lang = x.lang;
+    const hole = x.hole;
+    const login = x.login;
+    const loginLower = login.toLowerCase();
+    const byte = Number(x.bytes);
+
+    if (langFilter && lang.toLowerCase() !== langFilter) continue;
+    if (validHoles && !validHoles.has(hole)) continue;
+    if (validLangs && !validLangs.has(lang)) continue;
+
+    const holeKey = `${hole}::${scoring}`;
+    if (!globalHoleMin.has(holeKey) || byte < globalHoleMin.get(holeKey)) {
+      globalHoleMin.set(holeKey, byte);
+    }
+
+    const langKey = `${hole}::${scoring}::${lang}`;
+    if (!globalLangStats.has(langKey)) {
+      globalLangStats.set(langKey, { min_bytes: byte, logins: new Set() });
+    }
+    const langStat = globalLangStats.get(langKey);
+    if (byte < langStat.min_bytes) {
+      langStat.min_bytes = byte;
+    }
+    langStat.logins.add(loginLower);
+
+    const userLangKey = `${hole}::${scoring}::${lang}::${loginLower}`;
+    if (!userBestSubmissions.has(userLangKey) || byte < userBestSubmissions.get(userLangKey)) {
+      userBestSubmissions.set(userLangKey, byte);
+    }
+  }
+
+  const allHoleKeys = Array.from(globalHoleMin.keys());
+  const rowsMap = new Map();
+
+  for (const holeKey of allHoleKeys) {
+    const [hole, scoring] = holeKey.split("::");
+    const holeByteMin = globalHoleMin.get(holeKey);
+
+    let u1BestPoint = 0, u1BestByte = 0, u1BestLang = "";
+    let u2BestPoint = 0, u2BestByte = 0, u2BestLang = "";
+
+    for (const [langKey, langStat] of globalLangStats.entries()) {
+      if (!langKey.startsWith(`${holeKey}::`)) continue;
+      const lang = langKey.split("::")[2];
+
+      const u1UserKey = `${holeKey}::${lang}::${u1Lower}`;
+      if (userBestSubmissions.has(u1UserKey)) {
+        const loginByte = userBestSubmissions.get(u1UserKey);
+        const solCount = langStat.logins.size;
+        const langByteMin = langStat.min_bytes;
+        const sqrtN = Math.sqrt(solCount);
+        const sb = ((sqrtN + 2.0) / (sqrtN + 3.0)) * langByteMin + (1.0 / (sqrtN + 3.0)) * holeByteMin;
+        const point = (sb / loginByte) * 1000.0;
+
+        if (point > u1BestPoint) {
+          u1BestPoint = point;
+          u1BestByte = loginByte;
+          u1BestLang = lang;
+        }
+      }
+
+      if (u2Lower) {
+        const u2UserKey = `${holeKey}::${lang}::${u2Lower}`;
+        if (userBestSubmissions.has(u2UserKey)) {
+          const loginByte = userBestSubmissions.get(u2UserKey);
+          const solCount = langStat.logins.size;
+          const langByteMin = langStat.min_bytes;
+          const sqrtN = Math.sqrt(solCount);
+          const sb = ((sqrtN + 2.0) / (sqrtN + 3.0)) * langByteMin + (1.0 / (sqrtN + 3.0)) * holeByteMin;
+          const point = (sb / loginByte) * 1000.0;
+
+          if (point > u2BestPoint) {
+            u2BestPoint = point;
+            u2BestByte = loginByte;
+            u2BestLang = lang;
+          }
+        }
+      }
+    }
+
+    if (!rowsMap.has(hole)) {
+      rowsMap.set(hole, {
+        hole,
+        bytes: { u1Pt: 0, u1B: 0, u1L: '', u2Pt: 0, u2B: 0, u2L: '' },
+        chars: { u1Pt: 0, u1B: 0, u1L: '', u2Pt: 0, u2B: 0, u2L: '' },
+      });
+    }
+
+    const rowObj = rowsMap.get(hole);
+    if (scoring === "bytes") {
+      rowObj.bytes = { u1Pt: u1BestPoint, u1B: u1BestByte, u1L: u1BestLang, u2Pt: u2BestPoint, u2B: u2BestByte, u2L: u2BestLang };
+    } else if (scoring === "chars") {
+      rowObj.chars = { u1Pt: u1BestPoint, u1B: u1BestByte, u1L: u1BestLang, u2Pt: u2BestPoint, u2B: u2BestByte, u2L: u2BestLang };
+    }
+  }
+
+  return {
+    u1Name,
+    u2Name,
+    rows: Array.from(rowsMap.values())
+  };
+}
+
+function renderCompareResults(data, sortOrder) {
+  const { u1Name, u2Name, rows } = data;
+  const statsContainer = document.getElementById('statsContainer');
+  const tableHead = document.getElementById('tableHead');
+  const resultsBody = document.getElementById('resultsBody');
+
+  let u1Total = 0, u2Total = 0;
+  rows.forEach(r => {
+    u1Total += Math.round(r.bytes.u1Pt) + Math.round(r.chars.u1Pt);
+    u2Total += Math.round(r.bytes.u2Pt) + Math.round(r.chars.u2Pt);
+  });
+
+  statsContainer.innerHTML = `
+    <div class="stat-box">
+      <div class="val">${u1Total.toLocaleString()}</div>
+      <div class="lbl">${escapeHtml(u1Name)} Total Score</div>
+    </div>
+    ${u2Name ? `
+    <div class="stat-box">
+      <div class="val">${u2Total.toLocaleString()}</div>
+      <div class="lbl">${escapeHtml(u2Name)} Total Score</div>
+    </div>
+    <div class="stat-box">
+      <div class="val" style="color: ${u1Total >= u2Total ? 'var(--win)' : 'var(--loss)'}">
+        ${(u1Total - u2Total > 0 ? '+' : '')}${(u1Total - u2Total).toLocaleString()}
+      </div>
+      <div class="lbl">Difference (U1 - U2)</div>
+    </div>
+    ` : ''}
+  `;
+
+  tableHead.innerHTML = `
+    <tr>
+      <th>Hole</th>
+      <th>${escapeHtml(u1Name)} Bytes</th>
+      <th>${escapeHtml(u1Name)} Chars</th>
+      ${u2Name ? `
+        <th>${escapeHtml(u2Name)} Bytes</th>
+        <th>${escapeHtml(u2Name)} Chars</th>
+        <th>Diff (U1 - U2)</th>
+      ` : ''}
+    </tr>
+  `;
+
+  sortAndRenderCompareTable(rows, sortOrder, u2Name);
+  document.getElementById('resultsCard').classList.remove('hidden');
+}
+
+function sortAndRenderCompareTable(rows, sortOrder, u2Name) {
+  const resultsBody = document.getElementById('resultsBody');
+  const filterText = document.getElementById('tableSearch').value.toLowerCase();
+
+  const sorted = [...rows].sort((a, b) => {
+    const aU1 = Math.round(a.bytes.u1Pt) + Math.round(a.chars.u1Pt);
+    const bU1 = Math.round(b.bytes.u1Pt) + Math.round(b.chars.u1Pt);
+    const aU2 = Math.round(a.bytes.u2Pt) + Math.round(a.chars.u2Pt);
+    const bU2 = Math.round(b.bytes.u2Pt) + Math.round(b.chars.u2Pt);
+
+    if (sortOrder === 'u1-desc') return bU1 - aU1;
+    if (sortOrder === 'u2-desc') return bU2 - aU2;
+    if (sortOrder === 'diff-desc') return (bU1 - bU2) - (aU1 - aU2);
+    if (sortOrder === 'diff-asc') return (aU1 - aU2) - (bU1 - bU2);
+    if (sortOrder === 'alpha-asc') return a.hole.localeCompare(b.hole);
+    if (sortOrder === 'alpha-desc') return b.hole.localeCompare(a.hole);
+    return 0;
+  });
+
+  resultsBody.innerHTML = '';
+  sorted.forEach(r => {
+    if (filterText && !r.hole.toLowerCase().includes(filterText)) return;
+
+    const u1B = Math.round(r.bytes.u1Pt);
+    const u1C = Math.round(r.chars.u1Pt);
+    const u2B = Math.round(r.bytes.u2Pt);
+    const u2C = Math.round(r.chars.u2Pt);
+
+    const u1Sum = u1B + u1C;
+    const u2Sum = u2B + u2C;
+    const diff = u1Sum - u2Sum;
+
+    let diffClass = 'diff-zero';
+    if (diff > 0) diffClass = 'diff-pos';
+    else if (diff < 0) diffClass = 'diff-neg';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <a href="https://code.golf/holes/${r.hole}" target="_blank" rel="noopener noreferrer" class="golf-link">
+          ${escapeHtml(r.hole)}
+        </a>
+      </td>
+      <td>${u1B ? `${u1B} <span style="color:var(--text-dim);font-size:0.85rem">(${r.bytes.u1B}b ${r.bytes.u1L})</span>` : '-'}</td>
+      <td>${u1C ? `${u1C} <span style="color:var(--text-dim);font-size:0.85rem">(${r.chars.u1B}c ${r.chars.u1L})</span>` : '-'}</td>
+      ${u2Name ? `
+        <td>${u2B ? `${u2B} <span style="color:var(--text-dim);font-size:0.85rem">(${r.bytes.u2B}b ${r.bytes.u2L})</span>` : '-'}</td>
+        <td>${u2C ? `${u2C} <span style="color:var(--text-dim);font-size:0.85rem">(${r.chars.u2B}c ${r.chars.u2L})</span>` : '-'}</td>
+        <td class="${diffClass}">${diff > 0 ? '+' + diff : diff}</td>
+      ` : ''}
+    `;
+    resultsBody.appendChild(tr);
+  });
+}
+
+document.getElementById('activeSortSelect').addEventListener('change', (e) => {
+  if (lastCompareResults) {
+    sortAndRenderCompareTable(lastCompareResults.rows, e.target.value, lastCompareResults.u2Name);
+  }
+});
+
+document.getElementById('tableSearch').addEventListener('input', () => {
+  if (lastCompareResults) {
+    const sortOrder = document.getElementById('activeSortSelect').value;
+    sortAndRenderCompareTable(lastCompareResults.rows, sortOrder, lastCompareResults.u2Name);
+  }
+});
+
+// ==========================================
+// PAGE 2: Custom Leaderboard Logic (Bytes Only)
+// ==========================================
+document.getElementById('lbGoBtn').addEventListener('click', async () => {
+  const inputVal = document.getElementById('leaderboardUsersInput').value.trim();
+  const formulaType = document.getElementById('scoringFormulaSelect').value;
+  
+  const subFileInput = document.getElementById('submissionsFile').files[0];
+  const holesFileInput = document.getElementById('holesFile');
+  const langsFileInput = document.getElementById('langsFile');
+  const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
+
+  if (!inputVal) {
+    alert("Please enter at least one username.");
+    return;
+  }
+
+  if (!subFileInput) {
+    if (confirm("Submissions JSON (solutions.json) is mandatory!\n\nWould you like to visit GitHub to download solutions.json?")) {
+      window.open(GITHUB_HISTORY_URL, '_blank');
+    }
+    return;
+  }
+
+  showLoading();
+  await new Promise(r => setTimeout(r, 50));
+
+  try {
+    const [submissionsData, holesData, langsData] = await Promise.all([
+      readJsonFile(subFileInput),
+      getOrFetchJson(holesFileInput, 'https://code.golf/api/holes', 'holes.json'),
+      getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
+    ]);
+
+    const targetUsers = inputVal
+      .split(',')
+      .map(u => u.trim())
+      .filter(Boolean);
+
+    lastLeaderboardResults = processLeaderboardData(
+      submissionsData,
+      targetUsers,
+      holesData,
+      langsData,
+      includeExperimental,
+      formulaType
+    );
+
+    renderLeaderboard(lastLeaderboardResults);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    hideLoading();
+  }
+});
+
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard') {
+  const targetMap = new Map();
+  targetUsers.forEach(u => targetMap.set(u.toLowerCase(), u));
+
+  let validHoles = null;
+  if (holesJson && Array.isArray(holesJson)) {
+    validHoles = new Set(
+      holesJson
+        .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
+        .map(h => h.id)
+    );
+  }
+
+  let validLangs = null;
+  if (langsJson && Array.isArray(langsJson)) {
+    validLangs = new Set(
+      langsJson
+        .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
+        .map(l => l.id)
+    );
+  }
+
+  const globalHoleMin = new Map();
+  const globalLangStats = new Map();
+  const userBestSubmissions = new Map();
+
+  // Process ONLY Bytes solutions
+  for (const x of jsonData) {
     if (x.scoring !== "bytes") continue;
 
     const lang = x.lang;
     const hole = x.hole;
     const login = x.login;
+    const loginLower = login.toLowerCase();
     const byte = Number(x.bytes);
 
-    if (langFilter && lang !== langFilter) continue;
     if (validHoles && !validHoles.has(hole)) continue;
     if (validLangs && !validLangs.has(lang)) continue;
 
@@ -245,319 +485,161 @@ function processGolfData(jsonData, u1Name, u2Name, langFilter, holesJson, langsJ
     if (byte < langStat.min_bytes) {
       langStat.min_bytes = byte;
     }
-    langStat.logins.add(login);
+    langStat.logins.add(loginLower);
 
-    const userLangKey = `${hole}::${lang}::${login}`;
+    const userLangKey = `${hole}::${lang}::${loginLower}`;
     if (!userBestSubmissions.has(userLangKey) || byte < userBestSubmissions.get(userLangKey)) {
       userBestSubmissions.set(userLangKey, byte);
     }
   }
 
-  const holeLangUsers = new Map();
-  for (const [userLangKey, byte] of userBestSubmissions.entries()) {
-    const parts = userLangKey.split("::");
-    const key = `${parts[0]}::${parts[1]}`;
-    const login = parts[2];
+  const allHoles = Array.from(globalHoleMin.keys());
+  const leaderboard = [];
 
-    if (!holeLangUsers.has(key)) {
-      holeLangUsers.set(key, []);
-    }
-    holeLangUsers.get(key).push({ login, byte });
-  }
+  // Formula constants switch
+  const offset1 = formulaType === 'alt' ? 8.0 : 2.0;
+  const offset2 = formulaType === 'alt' ? 9.0 : 3.0;
 
-  const medalsMap = new Map();
-  for (const [key, users] of holeLangUsers.entries()) {
-    users.sort((a, b) => a.byte - b.byte);
+  for (const [targetLower, displayName] of targetMap.entries()) {
+    let totalPoints = 0;
+    let totalBytes = 0;
+    let holesSolved = 0;
 
-    for (let i = 0; i < users.length; i++) {
-      const current = users[i];
-      const strictlyFewer = users.filter(u => u.byte < current.byte).length;
-      const place = strictlyFewer + 1;
-      const tiedCount = users.filter(u => u.byte === current.byte).length;
+    for (const hole of allHoles) {
+      const holeByteMin = globalHoleMin.get(hole);
+      let bestHolePoint = 0;
+      let bestHoleByte = 0;
 
-      let medal = "";
-      if (place === 1) {
-        medal = tiedCount === 1 ? "💎" : "🥇";
-      } else if (place === 2) {
-        medal = "🥈";
-      } else if (place === 3) {
-        medal = "🥉";
-      }
+      for (const [langKey, langStat] of globalLangStats.entries()) {
+        if (!langKey.startsWith(`${hole}::`)) continue;
+        const lang = langKey.split("::")[1];
+        const userLangKey = `${hole}::${lang}::${targetLower}`;
 
-      medalsMap.set(`${key}::${current.login}`, medal);
-    }
-  }
+        if (userBestSubmissions.has(userLangKey)) {
+          const loginByte = userBestSubmissions.get(userLangKey);
+          const solCount = langStat.logins.size;
+          const langByteMin = langStat.min_bytes;
+          const sqrtN = Math.sqrt(solCount);
 
-  function getUserHoleResult(hole, targetLogin) {
-    if (!targetLogin) return { lang: "-", point: 0, medal: "" };
+          // Code.golf scoring formula based on chosen option
+          const sb = ((sqrtN + offset1) / (sqrtN + offset2)) * langByteMin + (1.0 / (sqrtN + offset2)) * holeByteMin;
+          const point = (sb / loginByte) * 1000.0;
 
-    const candidates = [];
-    const holeByteMin = globalHoleMin.get(hole);
-
-    for (const [key, langStat] of globalLangStats.entries()) {
-      if (!key.startsWith(`${hole}::`)) continue;
-      const lang = key.split("::")[1];
-      const userLangKey = `${hole}::${lang}::${targetLogin}`;
-
-      if (userBestSubmissions.has(userLangKey)) {
-        const loginByte = userBestSubmissions.get(userLangKey);
-        const solCount = langStat.logins.size;
-        const langByteMin = langStat.min_bytes;
-        const sqrtN = Math.sqrt(solCount);
-
-        let point = 0;
-        if (langFilter) {
-          point = (holeByteMin / loginByte) * 1000.0;
-        } else {
-          const sb = ((sqrtN + 2.0) / (sqrtN + 3.0)) * langByteMin + (1.0 / (sqrtN + 3.0)) * holeByteMin;
-          point = (sb / loginByte) * 1000.0;
+          if (point > bestHolePoint) {
+            bestHolePoint = point;
+            bestHoleByte = loginByte;
+          }
         }
+      }
 
-        const medal = medalsMap.get(userLangKey) || "";
-        candidates.push({ lang, point, medal });
+      if (bestHolePoint > 0) {
+        const roundedPoint = Math.round(bestHolePoint);
+        if (roundedPoint > 0) {
+          totalPoints += roundedPoint;
+          totalBytes += bestHoleByte;
+          holesSolved++;
+        }
       }
     }
 
-    if (candidates.length === 0) {
-      return { lang: "-", point: 0, medal: "" };
-    }
-
-    candidates.sort((a, b) => {
-      if (a.point !== b.point) return a.point - b.point;
-      return a.lang.localeCompare(b.lang);
-    });
-
-    const best = candidates[candidates.length - 1];
-    const roundedPoint = Math.round(best.point);
-
-    if (roundedPoint === 0) {
-      return { lang: "-", point: 0, medal: "" };
-    }
-
-    return {
-      lang: best.lang,
-      point: roundedPoint,
-      medal: best.medal
-    };
-  }
-
-  const allHoles = Array.from(globalHoleMin.keys()).sort();
-  const rows = [];
-  let u1TotalScore = 0;
-  let u1SolvedCount = 0;
-  let u2TotalScore = 0;
-  let u2SolvedCount = 0;
-
-  for (const hole of allHoles) {
-    const u1Res = getUserHoleResult(hole, u1Name);
-    const u2Res = hasUser2 ? getUserHoleResult(hole, u2Name) : null;
-
-    if (u1Res.point > 0) {
-      u1TotalScore += u1Res.point;
-      u1SolvedCount++;
-    }
-
-    if (u2Res && u2Res.point > 0) {
-      u2TotalScore += u2Res.point;
-      u2SolvedCount++;
-    }
-
-    const diff = u1Res.point - (u2Res ? u2Res.point : 0);
-
-    rows.push({
-      hole,
-      u1Lang: u1Res.lang,
-      u1Point: u1Res.point,
-      u1Medal: u1Res.medal,
-      u2Lang: u2Res ? u2Res.lang : "-",
-      u2Point: u2Res ? u2Res.point : 0,
-      u2Medal: u2Res ? u2Res.medal : "",
-      diff
+    leaderboard.push({
+      name: displayName,
+      holes: holesSolved,
+      points: totalPoints,
+      bytes: totalBytes
     });
   }
 
-  return {
-    rows,
-    u1Name,
-    u1TotalScore,
-    u1SolvedCount,
-    u2Name,
-    u2TotalScore,
-    u2SolvedCount,
-    hasUser2
-  };
+  // Sort by Points descending, then Bytes ascending
+  leaderboard.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    return a.bytes - b.bytes;
+  });
+
+  return leaderboard;
 }
 
-function renderData(sortOption) {
-  if (!globalProcessedData) return;
-  const data = globalProcessedData;
-
-  const statsContainer = document.getElementById('statsContainer');
-  statsContainer.innerHTML = '';
-
-  const u1ProfileUrl = `https://code.golf/golfers/${encodeURIComponent(data.u1Name)}`;
-  const u2ProfileUrl = data.u2Name ? `https://code.golf/golfers/${encodeURIComponent(data.u2Name)}` : '';
-
-  if (data.hasUser2) {
-    const diffTotal = data.u1TotalScore - data.u2TotalScore;
-    const diffSign = diffTotal > 0 ? `+${diffTotal.toLocaleString()}` : diffTotal.toLocaleString();
-
-    statsContainer.innerHTML = `
-      <div class="stat-box">
-        <div class="val">${data.u1TotalScore.toLocaleString()}</div>
-        <div class="lbl">
-          <a href="${u1ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
-            ${escapeHtml(data.u1Name)} (${data.u1SolvedCount} solved)
-          </a>
-        </div>
-      </div>
-      <div class="stat-box">
-        <div class="val">${data.u2TotalScore.toLocaleString()}</div>
-        <div class="lbl">
-          <a href="${u2ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
-            ${escapeHtml(data.u2Name)} (${data.u2SolvedCount} solved)
-          </a>
-        </div>
-      </div>
-      <div class="stat-box">
-        <div class="val ${diffTotal > 0 ? 'diff-pos' : diffTotal < 0 ? 'diff-neg' : 'diff-zero'}">${diffSign}</div>
-        <div class="lbl">SCORE DIFF (U1 - U2)</div>
-      </div>
-    `;
-  } else {
-    statsContainer.innerHTML = `
-      <div class="stat-box">
-        <div class="val">${data.u1TotalScore.toLocaleString()}</div>
-        <div class="lbl">TOTAL SCORE</div>
-      </div>
-      <div class="stat-box">
-        <div class="val">${data.u1SolvedCount}</div>
-        <div class="lbl">
-          <a href="${u1ProfileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
-            ${escapeHtml(data.u1Name)} (${data.u1SolvedCount} solved)
-          </a>
-        </div>
-      </div>
-    `;
-  }
-
-  const tableHead = document.getElementById('tableHead');
-  if (data.hasUser2) {
-    tableHead.innerHTML = `
-      <tr>
-        <th>Hole</th>
-        <th>${escapeHtml(data.u1Name)} (Lang)</th>
-        <th>${escapeHtml(data.u1Name)} (Score)</th>
-        <th>${escapeHtml(data.u2Name)} (Lang)</th>
-        <th>${escapeHtml(data.u2Name)} (Score)</th>
-        <th>Diff</th>
-      </tr>
-    `;
-  } else {
-    tableHead.innerHTML = `
-      <tr>
-        <th>Hole</th>
-        <th>Language</th>
-        <th>Points</th>
-      </tr>
-    `;
-  }
-
-  const sortedRows = sortRows([...data.rows], sortOption);
-
-  const tbody = document.getElementById('resultsBody');
+function renderLeaderboard(results) {
+  const tbody = document.getElementById('lbResultsBody');
   tbody.innerHTML = '';
 
-  sortedRows.forEach(row => {
+  results.forEach((row, index) => {
     const tr = document.createElement('tr');
+    const profileUrl = `https://code.golf/golfers/${encodeURIComponent(row.name)}`;
 
-    const holeUrl = `https://code.golf/${encodeURIComponent(row.hole)}`;
-    const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(row.hole)}</strong></a>`;
-
-    const u1LangDisplay = formatLangDisplay(row.hole, row.u1Lang, row.u1Medal);
-    const u1ScoreDisplay = formatScoreDisplay(row.hole, row.u1Lang, row.u1Point);
-
-    const u2LangDisplay = formatLangDisplay(row.hole, row.u2Lang, row.u2Medal);
-    const u2ScoreDisplay = formatScoreDisplay(row.hole, row.u2Lang, row.u2Point);
-
-    if (data.hasUser2) {
-      const diffClass = row.diff > 0 ? 'diff-pos' : row.diff < 0 ? 'diff-neg' : 'diff-zero';
-      const diffText = row.diff > 0 ? `+${row.diff.toLocaleString()}` : row.diff.toLocaleString();
-
-      tr.innerHTML = `
-        <td>${holeDisplay}</td>
-        <td>${u1LangDisplay}</td>
-        <td>${u1ScoreDisplay}</td>
-        <td>${u2LangDisplay}</td>
-        <td>${u2ScoreDisplay}</td>
-        <td class="${diffClass}">${diffText}</td>
-      `;
-    } else {
-      tr.innerHTML = `
-        <td>${holeDisplay}</td>
-        <td>${u1LangDisplay}</td>
-        <td>${u1ScoreDisplay}</td>
-      `;
-    }
+    tr.innerHTML = `
+      <td><strong>${index + 1}</strong></td>
+      <td>
+        <a href="${profileUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">
+          <strong>${escapeHtml(row.name)}</strong>
+        </a>
+      </td>
+      <td>${row.holes.toLocaleString()}</td>
+      <td><strong>${row.points.toLocaleString()}</strong></td>
+      <td>${row.bytes.toLocaleString()}</td>
+    `;
     tbody.appendChild(tr);
   });
 
-  document.getElementById('resultsCard').classList.remove('hidden');
-  applySearchFilter();
+  document.getElementById('lbResultsCard').classList.remove('hidden');
 }
 
-function formatLangDisplay(hole, lang, medal) {
-  if (!lang || lang === "N/A" || lang === "-") return "-";
-  const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(lang)}`;
-  const medalHtml = medal ? ` <span class="medal">${medal}</span>` : '';
-  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>${medalHtml}`;
-}
-
-function formatScoreDisplay(hole, lang, point) {
-  if (!point || point <= 0 || !lang || lang === "N/A" || lang === "-") {
-    return `<strong>${(point || 0).toLocaleString()}</strong>`;
+// ==========================================
+// TXT Export Feature
+// ==========================================
+document.getElementById('exportLbTxtBtn').addEventListener('click', () => {
+  if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
+    alert("No leaderboard data to export!");
+    return;
   }
-  const scoreUrl = `https://code.golf/rankings/holes/${encodeURIComponent(hole)}/${encodeURIComponent(lang)}/bytes`;
-  return `<a href="${scoreUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean"><strong>${point.toLocaleString()}</strong></a>`;
-}
 
-function sortRows(rows, sortOption) {
-  switch (sortOption) {
-    case 'u1-desc':
-      return rows.sort((a, b) => b.u1Point - a.u1Point || a.hole.localeCompare(b.hole));
-    case 'u2-desc':
-      return rows.sort((a, b) => b.u2Point - a.u2Point || a.hole.localeCompare(b.hole));
-    case 'diff-desc':
-      return rows.sort((a, b) => b.diff - a.diff || a.hole.localeCompare(b.hole));
-    case 'diff-asc':
-      return rows.sort((a, b) => a.diff - b.diff || a.hole.localeCompare(b.hole));
-    case 'alpha-asc':
-      return rows.sort((a, b) => a.hole.localeCompare(b.hole));
-    case 'alpha-desc':
-      return rows.sort((a, b) => b.hole.localeCompare(a.hole));
-    default:
-      return rows;
-  }
-}
-
-document.getElementById('activeSortSelect').addEventListener('change', (e) => {
-  renderData(e.target.value);
+  const txtContent = generateAsciiTable(lastLeaderboardResults);
+  downloadTxtFile('leaderboard.txt', txtContent);
 });
 
-document.getElementById('tableSearch').addEventListener('input', applySearchFilter);
+function generateAsciiTable(results) {
+  const headers = ['#', 'golfer', 'holes', 'points', 'bytes'];
+  
+  const rows = results.map((row, index) => [
+    String(index + 1),
+    row.name,
+    row.holes.toLocaleString(),
+    row.points.toLocaleString(),
+    row.bytes.toLocaleString()
+  ]);
 
-function applySearchFilter() {
-  const term = document.getElementById('tableSearch').value.toLowerCase();
-  const rows = document.querySelectorAll('#resultsBody tr');
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(term) ? '' : 'none';
+  const colWidths = headers.map((header, colIdx) => {
+    let maxLen = header.length;
+    rows.forEach(r => {
+      if (r[colIdx].length > maxLen) {
+        maxLen = r[colIdx].length;
+      }
+    });
+    return maxLen;
   });
+
+  const formatRow = (rowCells) => {
+    return rowCells.map((cell, idx) => {
+      const width = colWidths[idx];
+      return idx === 1 ? cell.padEnd(width, ' ') : cell.padStart(width, ' ');
+    }).join(' | ');
+  };
+
+  const headerLine = formatRow(headers);
+  const separatorLine = colWidths.map(w => '-'.repeat(w)).join('-+-');
+  const dataLines = rows.map(r => formatRow(r));
+
+  return [headerLine, separatorLine, ...dataLines].join('\n');
 }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>"']/g, m => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-  }[m]));
+function downloadTxtFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
