@@ -221,9 +221,16 @@
       <div id="lbResultsCard" class="card hidden" style="margin-top: 1.5rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
           <h3 style="margin: 0; color: var(--accent);">Leaderboard Standings</h3>
-          <button id="exportLbTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <select id="lbSortSelect" class="sort-select">
+              <option value="points-desc">Sort by Points (High to Low)</option>
+              <option value="rank-change-desc">Sort by Rank Change (+ to -)</option>
+              <option value="abs-rank-change-desc">Sort by Absolute Rank Change (|Δ| High to Low)</option>
+            </select>
+            <button id="exportLbTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
+          </div>
         </div>
-
+      
         <div style="overflow-x: auto;">
           <table id="lbResultsTable">
             <thead>
@@ -233,6 +240,7 @@
                 <th>Holes</th>
                 <th>Points</th>
                 <th>Bytes</th>
+                <th style="text-align: right;" title="Places rose (+) or fell (-)">+/-</th>
               </tr>
             </thead>
             <tbody id="lbResultsBody"></tbody>

@@ -1,5 +1,6 @@
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
 
+// --- Mathematical Helper: Hole Power Mean ---
 function calculateHolePowerMean(holeScores, totalHoles, chi) {
   if (totalHoles === 0) return 0;
 
@@ -19,6 +20,7 @@ function calculateHolePowerMean(holeScores, totalHoles, chi) {
   return mean * totalHoles;
 }
 
+// Default Golfers List Click Handler
 document.getElementById('leaderboardUsersLabel')?.addEventListener('click', (e) => {
   e.preventDefault();
   const input = document.getElementById('leaderboardUsersInput');
@@ -43,7 +45,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Helper Functions ---
+// --- General UI Helper Functions ---
 function showLoading() {
   document.getElementById('loadingOverlay')?.classList.remove('hidden');
 }
@@ -102,6 +104,18 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   }
 }
 
+function downloadTxtFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // --- Solutions Modal Handling ---
 const solutionsModal = document.getElementById('solutionsModal');
 
@@ -153,7 +167,7 @@ document.getElementById('dlSolutionsBtn')?.addEventListener('click', handleSolut
 document.getElementById('dlHolesBtn')?.addEventListener('click', () => window.open('https://code.golf/api/holes', '_blank'));
 document.getElementById('dlLangsBtn')?.addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
 
-// Global State
+// Global App State
 let lastCompareResults = null;
 let lastLeaderboardResults = [];
 
@@ -169,7 +183,6 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || 1);
   const langFilter = (document.getElementById('langFilterInput')?.value || '').trim().toLowerCase();
   
-  // Fixed: changed sortOrderInput -> activeSortSelect and added default fallback
   const activeSortEl = document.getElementById('activeSortSelect');
   const sortOrder = activeSortEl ? activeSortEl.value : 'u1-desc';
 
@@ -238,7 +251,7 @@ function processCompareData({
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
 
-  // Setup formula offsets
+  // Formula offsets
   let offset1 = 2.0;
   let offset2 = 3.0;
   let isFlat1000 = false;
@@ -311,7 +324,7 @@ function processCompareData({
     }
   }
 
-  // --- Medals ---
+  // Calculate Medals
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
     const parts = userLangKey.split("::");
@@ -427,7 +440,6 @@ function processCompareData({
     });
   }
 
-  // Compute aggregated scores multiplying power mean by totalHolesCount
   const u1TotalScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
   const u2TotalScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
 
@@ -505,7 +517,7 @@ function renderCompareResults(data, sortOrder) {
   }
 
   sortAndRenderCompareTable(data.rows, sortOrder, hasUser2, scoringMode);
-  document.getElementById('resultsCard').classList.remove('hidden');
+  document.getElementById('resultsCard')?.classList.remove('hidden');
 }
 
 function formatLangDisplay(hole, lang, medal) {
@@ -525,7 +537,7 @@ function formatScoreDisplay(hole, lang, point, scoringMode) {
 
 function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode) {
   const resultsBody = document.getElementById('resultsBody');
-  const filterText = document.getElementById('tableSearch').value.toLowerCase();
+  const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
 
   const sorted = [...rows].sort((a, b) => {
     if (sortOrder === 'u1-desc') return b.u1Point - a.u1Point || a.hole.localeCompare(b.hole);
@@ -573,7 +585,7 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode) {
   });
 }
 
-// Re-render listeners
+// Compare Re-render Listeners
 document.getElementById('activeSortSelect')?.addEventListener('change', (e) => {
   if (lastCompareResults) {
     renderCompareResults(lastCompareResults, e.target.value);
@@ -582,19 +594,17 @@ document.getElementById('activeSortSelect')?.addEventListener('change', (e) => {
 
 document.getElementById('tableSearch')?.addEventListener('input', () => {
   if (lastCompareResults) {
-    const sortOrder = document.getElementById('activeSortSelect').value;
+    const sortOrder = document.getElementById('activeSortSelect')?.value || 'u1-desc';
     renderCompareResults(lastCompareResults, sortOrder);
   }
 });
 
-// Scoring Mode Switch listener -> re-triggers analysis if file is loaded
 document.getElementById('scoringSelect')?.addEventListener('change', () => {
   if (document.getElementById('submissionsFile')?.files[0]) {
     document.getElementById('goBtn')?.click();
   }
 });
 
-// Download Results JSON
 document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
   const jsonStr = JSON.stringify(lastCompareResults.rows, null, 2);
@@ -615,8 +625,6 @@ document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
 document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const inputVal = document.getElementById('leaderboardUsersInput').value.trim();
   const formulaType = document.getElementById('scoringFormulaSelect')?.value || 'standard';
-  
-  // Fixed: Target lbChiValue span text instead of lbChiSlider element
   const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
   
   const subFileInput = document.getElementById('submissionsFile').files[0];
@@ -659,7 +667,8 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       chiExponent
     );
 
-    renderLeaderboard(lastLeaderboardResults);
+    const sortOrder = document.getElementById('lbSortSelect')?.value || 'points-desc';
+    renderLeaderboard(lastLeaderboardResults, sortOrder);
   } catch (err) {
     alert(err.message);
   } finally {
@@ -668,8 +677,11 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
 });
 
 function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard', chiExponent = 1) {
+  // Store initial input index (1-based seed rank)
   const targetMap = new Map();
-  targetUsers.forEach(u => targetMap.set(u.toLowerCase(), u));
+  targetUsers.forEach((u, index) => {
+    targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
+  });
 
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
@@ -746,7 +758,7 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     isFlat1000 = true;
   }
 
-  for (const [targetLower, displayName] of targetMap.entries()) {
+  for (const [targetLower, userInfo] of targetMap.entries()) {
     let totalBytes = 0;
     let holesSolved = 0;
     const userScores = [];
@@ -792,45 +804,98 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
       }
     }
 
-    // Calculate total points applying power mean scaled across total holes |H|
     const totalPoints = Math.round(calculateHolePowerMean(userScores, totalHolesCount, chiExponent));
 
     leaderboard.push({
-      name: displayName,
+      name: userInfo.displayName,
+      initialRank: userInfo.initialRank,
       holes: holesSolved,
       points: totalPoints,
       bytes: totalBytes
     });
   }
 
+  // Determine standard standings rank (Points desc, Bytes asc)
   leaderboard.sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     return a.bytes - b.bytes;
   });
 
+  // Calculate places rose (+) / fell (-)
+  leaderboard.forEach((row, index) => {
+    row.standardRank = index + 1;
+    row.rankChange = row.initialRank - row.standardRank;
+  });
+
   return leaderboard;
 }
 
-function renderLeaderboard(results) {
+function sortLeaderboardData(results, sortOrder) {
+  return [...results].sort((a, b) => {
+    if (sortOrder === 'rank-change-desc') {
+      if (b.rankChange !== a.rankChange) {
+        return b.rankChange - a.rankChange;
+      }
+      if (b.points !== a.points) return b.points - a.points;
+      return a.bytes - b.bytes;
+    }
+
+    if (sortOrder === 'abs-rank-change-desc') {
+      const absA = Math.abs(a.rankChange);
+      const absB = Math.abs(b.rankChange);
+
+      if (absA !== absB) {
+        return absB - absA;
+      }
+      // Positive numbers take precedence over negative numbers with equal absolute value (+3 above -3)
+      if (b.rankChange !== a.rankChange) {
+        return b.rankChange - a.rankChange;
+      }
+      if (b.points !== a.points) return b.points - a.points;
+      return a.bytes - b.bytes;
+    }
+
+    // Default 'points-desc'
+    if (b.points !== a.points) return b.points - a.points;
+    return a.bytes - b.bytes;
+  });
+}
+
+function renderLeaderboard(results, sortOrder = 'points-desc') {
+  const sortedResults = sortLeaderboardData(results, sortOrder);
   const tbody = document.getElementById('lbResultsBody');
+  if (!tbody) return;
   tbody.innerHTML = '';
 
-  results.forEach((row, index) => {
+  sortedResults.forEach((row) => {
     const tr = document.createElement('tr');
+    
+    const changeVal = row.rankChange;
+    const changeSign = changeVal > 0 ? `+${changeVal}` : `${changeVal}`;
+    const diffClass = changeVal > 0 ? 'diff-pos' : changeVal < 0 ? 'diff-neg' : 'diff-zero';
+
     tr.innerHTML = `
-      <td><strong>${index + 1}</strong></td>
+      <td><strong>${row.standardRank}</strong></td>
       <td>
         <strong>${getGolferLink(row.name)}</strong>
       </td>
       <td>${row.holes.toLocaleString()}</td>
       <td><strong>${row.points.toLocaleString()}</strong></td>
       <td>${row.bytes.toLocaleString()}</td>
+      <td style="text-align: right;" class="${diffClass}"><strong>${changeSign}</strong></td>
     `;
     tbody.appendChild(tr);
   });
 
   document.getElementById('lbResultsCard')?.classList.remove('hidden');
 }
+
+// Leaderboard Sort Dropdown Change Listener
+document.getElementById('lbSortSelect')?.addEventListener('change', (e) => {
+  if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
+    renderLeaderboard(lastLeaderboardResults, e.target.value);
+  }
+});
 
 // ==========================================
 // TXT Export Feature
@@ -841,19 +906,22 @@ document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
     return;
   }
 
-  const txtContent = generateAsciiTable(lastLeaderboardResults);
+  const sortOrder = document.getElementById('lbSortSelect')?.value || 'points-desc';
+  const txtContent = generateAsciiTable(lastLeaderboardResults, sortOrder);
   downloadTxtFile('leaderboard.txt', txtContent);
 });
 
-function generateAsciiTable(results) {
-  const headers = ['#', 'golfer', 'holes', 'points', 'bytes'];
+function generateAsciiTable(results, sortOrder = 'points-desc') {
+  const sortedResults = sortLeaderboardData(results, sortOrder);
+  const headers = ['#', 'golfer', 'holes', 'points', 'bytes', '+/-'];
   
-  const rows = results.map((row, index) => [
-    String(index + 1),
+  const rows = sortedResults.map((row) => [
+    String(row.standardRank),
     row.name,
     row.holes.toLocaleString(),
     row.points.toLocaleString(),
-    row.bytes.toLocaleString()
+    row.bytes.toLocaleString(),
+    row.rankChange > 0 ? `+${row.rankChange}` : String(row.rankChange)
   ]);
 
   const colWidths = headers.map((header, colIdx) => {
@@ -880,18 +948,6 @@ function generateAsciiTable(results) {
   return [headerLine, separatorLine, ...dataLines].join('\n');
 }
 
-function downloadTxtFile(filename, text) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 // --- Chi Slider & Text Click Handlers ---
 function setupChiInput(valueElId, sliderElId) {
   const valueEl = document.getElementById(valueElId);
@@ -907,13 +963,12 @@ function setupChiInput(valueElId, sliderElId) {
   // 2. Click text to manually enter a number from 1 to 1000
   valueEl.addEventListener('click', () => {
     const currentVal = valueEl.textContent;
-    const input = prompt('Enter Holes Exponent (χ) value (1 to 1000):', currentVal);
+    const input = prompt('Enter Holes Exponent (χ value 1 to 1000):', currentVal);
 
     if (input !== null) {
       const num = parseFloat(input);
       if (!isNaN(num) && num >= 1 && num <= 1000) {
         valueEl.textContent = num;
-        // Sync slider position if value is within slider bounds
         sliderEl.value = Math.min(num, parseFloat(sliderEl.max));
       } else {
         alert('Please enter a valid number between 1 and 1000.');
