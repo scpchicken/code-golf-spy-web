@@ -47,24 +47,33 @@ function readJsonFile(file) {
   });
 }
 
-// Fetch JSON with CORS proxy fallback
+// Fetch JSON with CORS proxy fallback and cache-busting
 async function getOrFetchJson(fileInput, targetUrl, label) {
   if (fileInput && fileInput.files[0]) {
     return await readJsonFile(fileInput.files[0]);
   }
 
+  // 1. Add a unique timestamp to force proxies & browser to fetch fresh data
+  const cacheBuster = `t=${Date.now()}`;
+  const urlWithCacheBuster = targetUrl.includes('?') 
+    ? `${targetUrl}&${cacheBuster}` 
+    : `${targetUrl}?${cacheBuster}`;
+
+  // 2nd Attempt options to bypass browser cache
+  const fetchOptions = { cache: 'no-store' };
+
   // 1st Attempt: Direct fetch
   try {
-    const response = await fetch(targetUrl);
+    const response = await fetch(urlWithCacheBuster, fetchOptions);
     if (response.ok) return await response.json();
   } catch (directErr) {
     console.warn(`Direct fetch failed for ${targetUrl}, trying proxy...`);
   }
 
-  // 2nd Attempt: Fetch via CORS proxy
+  // 2nd Attempt: Fetch via CORS proxy with cache buster
   try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-    const response = await fetch(proxyUrl);
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlWithCacheBuster)}`;
+    const response = await fetch(proxyUrl, fetchOptions);
     if (response.ok) return await response.json();
   } catch (proxyErr) {
     console.error(`Proxy fetch also failed for ${targetUrl}`);
@@ -102,13 +111,26 @@ document.getElementById('dlLangsBtn').addEventListener('click', async () => {
 
 document.getElementById('dlSolutionsBtn').addEventListener('click', async () => {
   showLoading();
+  
+  // 1. Open blank tab immediately during the user's click event
+  let fallbackTab = null;
+
   try {
     const fileInput = document.getElementById('submissionsFile');
     const data = await getOrFetchJson(fileInput, 'https://code.golf/scores/all-holes/all-langs/all', 'solutions.json');
     triggerDownload(data, 'solutions.json');
   } catch (err) {
-    if (confirm(`${err.message}\n\nWould you like to open GitHub to download solutions.json from the history repository?`)) {
-      window.open(GITHUB_HISTORY_URL, '_blank');
+    const curlCmd = 'curl -k -L https://code.golf/scores/all-holes/all-langs/all -o solutions.json';
+
+    // 2. Ask user, and only open URL in the pre-created tab if confirmed
+    if (confirm(
+      `Failed to download solutions.json:\n${err.message}\n\n` +
+      `• Click OK to open GitHub history repository.\n` +
+      `• Click Cancel to copy the terminal curl command to your clipboard.`
+    )) {
+      window.open(GITHUB_HISTORY_URL, '_blank'); // Or redirect current window: window.location.href = GITHUB_HISTORY_URL;
+    } else {
+      navigator.clipboard.writeText(curlCmd).catch(() => {});
     }
   } finally {
     hideLoading();
