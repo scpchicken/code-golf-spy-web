@@ -1,20 +1,37 @@
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
 
+// --- Unicode & Alignment Helpers ---
+// [...str] correctly handles multi-byte Unicode/surrogate pairs like '𝑒', '💎', etc.
+function getVisualWidth(str) {
+  return [...String(str || '')].length;
+}
+
+function padVisualEnd(str, targetWidth) {
+  const s = String(str || '');
+  const vWidth = getVisualWidth(s);
+  const padLen = Math.max(0, targetWidth - vWidth);
+  return s + ' '.repeat(padLen);
+}
+
+function padVisualStart(str, targetWidth) {
+  const s = String(str || '');
+  const vWidth = getVisualWidth(s);
+  const padLen = Math.max(0, targetWidth - vWidth);
+  return ' '.repeat(padLen) + s;
+}
+
 // --- Mathematical Helper: Hole Power Mean ---
 function calculateHolePowerMean(holeScores, totalHoles, chi) {
   if (totalHoles === 0) return 0;
 
-  // Standard Arithmetic Sum across all holes (chi = 1)
   if (chi === 1) {
     return holeScores.reduce((acc, score) => acc + score, 0);
   }
 
-  // Pure Maximum scaled by number of holes (chi >= 100)
   if (chi >= 100) {
     return Math.max(...holeScores, 0) * totalHoles;
   }
 
-  // Generalized Power Mean multiplied by total holes
   const sumPow = holeScores.reduce((acc, score) => acc + Math.pow(score, chi), 0);
   const mean = Math.pow(sumPow / totalHoles, 1 / chi);
   return mean * totalHoles;
@@ -104,8 +121,8 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   }
 }
 
-function downloadTxtFile(filename, text) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+function downloadMarkdownFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -114,6 +131,17 @@ function downloadTxtFile(filename, text) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Helper: Medal comparator for popup lists (💎 > 🥇 > 🥈 > 🥉, then bytes ascending, then A-Z)
+function compareMedalCandidates(a, b) {
+  const medalRank = { '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
+  const rankA = medalRank[a.medal] || 5;
+  const rankB = medalRank[b.medal] || 5;
+
+  if (rankA !== rankB) return rankA - rankB;
+  if (a.loginByte !== b.loginByte) return a.loginByte - b.loginByte;
+  return a.lang.localeCompare(b.lang);
 }
 
 // --- Solutions Modal Handling ---
@@ -140,6 +168,65 @@ document.getElementById('modalCurlBtn')?.addEventListener('click', () => {
 
 document.getElementById('modalCloseBtn')?.addEventListener('click', () => {
   solutionsModal?.classList.add('hidden');
+});
+
+// --- Popup Modal for Medals List ---
+function showExtraMedalsModal(hole, golfer, allMedals) {
+  let modal = document.getElementById('extraMedalsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'extraMedalsModal';
+    modal.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7); display: flex; align-items: center;
+      justify-content: center; z-index: 9999;
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const rowsHtml = allMedals.map(m => {
+    const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(m.lang)}`;
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(m.lang)}</a>
+        <span style="font-size: 1.2em; margin-left: 12px;">${m.medal}</span>
+      </div>
+    `;
+  }).join('');
+
+  modal.innerHTML = `
+    <div style="background: #1e1e24; color: #fff; padding: 20px 24px; border-radius: 8px; min-width: 260px; max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 8px;">
+        <strong style="font-size: 1.1em;">${escapeHtml(hole)} (${escapeHtml(golfer)})</strong>
+        <button id="closeExtraMedalsBtn" style="background: none; border: none; color: #aaa; font-size: 1.4em; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <div style="max-height: 300px; overflow-y: auto;">
+        ${rowsHtml}
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  const closeBtn = modal.querySelector('#closeExtraMedalsBtn');
+  closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  };
+}
+
+// Event Delegation for (N) medal count clicks
+document.getElementById('resultsBody')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.extra-medals-btn');
+  if (btn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const hole = btn.getAttribute('data-hole');
+    const golfer = btn.getAttribute('data-golfer');
+    const medals = JSON.parse(btn.getAttribute('data-medals') || '[]');
+    showExtraMedalsModal(hole, golfer, medals);
+  }
 });
 
 // --- Tab Navigation Switcher ---
@@ -228,6 +315,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
     }
     renderCompareResults(lastCompareResults, sortOrder);
     document.getElementById('dlResultsBtn')?.classList.remove('hidden');
+    document.getElementById('dlResultsTxtBtn')?.classList.remove('hidden');
   } catch (err) {
     alert(err.message);
   } finally {
@@ -251,7 +339,6 @@ function processCompareData({
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
 
-  // Formula offsets
   let offset1 = 2.0;
   let offset2 = 3.0;
   let isFlat1000 = false;
@@ -324,7 +411,7 @@ function processCompareData({
     }
   }
 
-  // Calculate Medals
+  // Calculate Medals (Diamonds 💎 for uncontested gold, Golds 🥇, Silvers 🥈, Bronzes 🥉)
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
     const parts = userLangKey.split("::");
@@ -338,6 +425,10 @@ function processCompareData({
   const medalsMap = new Map();
   for (const [key, users] of holeLangUsers.entries()) {
     users.sort((a, b) => a.byte - b.byte);
+    if (users.length === 0) continue;
+
+    const minByte = users[0].byte;
+    const tiedForFirst = users.filter(u => u.byte === minByte).length;
 
     for (let i = 0; i < users.length; i++) {
       const current = users[i];
@@ -345,16 +436,46 @@ function processCompareData({
       const place = strictlyFewer + 1;
 
       let medal = "";
-      if (place === 1) medal = "🥇";
-      else if (place === 2) medal = "🥈";
-      else if (place === 3) medal = "🥉";
+      if (place === 1) {
+        medal = (tiedForFirst === 1) ? "💎" : "🥇";
+      } else if (place === 2) {
+        medal = "🥈";
+      } else if (place === 3) {
+        medal = "🥉";
+      }
 
       medalsMap.set(`${key}::${current.login}`, medal);
     }
   }
 
+  // Count total Golds and Diamonds for target users
+  let u1Golds = 0, u1Diamonds = 0;
+  let u2Golds = 0, u2Diamonds = 0;
+
+  for (const [userLangKey] of userBestSubmissions.entries()) {
+    const parts = userLangKey.split("::");
+    const loginLower = parts[2];
+    const medal = medalsMap.get(userLangKey) || "";
+
+    if (loginLower === u1Lower) {
+      if (medal === "💎") {
+        u1Diamonds++;
+        u1Golds++;
+      } else if (medal === "🥇") {
+        u1Golds++;
+      }
+    } else if (hasUser2 && loginLower === u2Lower) {
+      if (medal === "💎") {
+        u2Diamonds++;
+        u2Golds++;
+      } else if (medal === "🥇") {
+        u2Golds++;
+      }
+    }
+  }
+
   function getUserHoleResult(hole, targetLoginLower) {
-    if (!targetLoginLower) return { lang: "-", point: 0, medal: "" };
+    if (!targetLoginLower) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-" };
 
     const candidates = [];
     const holeByteMin = globalHoleMin.get(hole);
@@ -385,10 +506,15 @@ function processCompareData({
       }
     }
 
-    if (candidates.length === 0) return { lang: "-", point: 0, medal: "" };
+    if (candidates.length === 0) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-" };
 
     candidates.sort((a, b) => {
       if (a.point !== b.point) return a.point - b.point;
+      
+      const medalRank = { '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
+      const rankA = medalRank[a.medal] || 5;
+      const rankB = medalRank[b.medal] || 5;
+      if (rankA !== rankB) return rankB - rankA;
       if (a.loginByte !== b.loginByte) return b.loginByte - a.loginByte;
       return b.lang.localeCompare(a.lang);
     });
@@ -396,12 +522,39 @@ function processCompareData({
     const best = candidates[candidates.length - 1];
     const roundedPoint = Math.round(best.point);
 
-    if (roundedPoint === 0) return { lang: "-", point: 0, medal: "" };
+    if (roundedPoint === 0) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-" };
+
+    const allMedals = candidates
+      .filter(c => c.medal !== "")
+      .sort(compareMedalCandidates);
+
+    let dCount = 0, gCount = 0, sCount = 0, bCount = 0;
+    allMedals.forEach(m => {
+      if (m.medal === '💎') {
+        dCount++;
+        gCount++;
+      } else if (m.medal === '🥇') {
+        gCount++;
+      } else if (m.medal === '🥈') {
+        sCount++;
+      } else if (m.medal === '🥉') {
+        bCount++;
+      }
+    });
+
+    const asciiParts = [];
+    if (dCount > 0) asciiParts.push(`${dCount}D`);
+    if (gCount > 0) asciiParts.push(`${gCount}G`);
+    if (sCount > 0) asciiParts.push(`${sCount}S`);
+    if (bCount > 0) asciiParts.push(`${bCount}B`);
+    const medalsAscii = asciiParts.join(' ') || '-';
 
     return {
       lang: best.lang,
       point: roundedPoint,
-      medal: best.medal
+      medal: best.medal,
+      allMedals,
+      medalsAscii
     };
   }
 
@@ -433,9 +586,13 @@ function processCompareData({
       u1Lang: u1Res.lang,
       u1Point: u1Res.point,
       u1Medal: u1Res.medal,
+      u1AllMedals: u1Res.allMedals,
+      u1MedalsAscii: u1Res.medalsAscii,
       u2Lang: u2Res ? u2Res.lang : "-",
       u2Point: u2Res ? u2Res.point : 0,
       u2Medal: u2Res ? u2Res.medal : "",
+      u2AllMedals: u2Res ? u2Res.allMedals : [],
+      u2MedalsAscii: u2Res ? u2Res.medalsAscii : "-",
       diff
     });
   }
@@ -448,9 +605,13 @@ function processCompareData({
     u1Name,
     u1TotalScore,
     u1SolvedCount,
+    u1Golds,
+    u1Diamonds,
     u2Name,
     u2TotalScore,
     u2SolvedCount,
+    u2Golds,
+    u2Diamonds,
     hasUser2,
     scoringMode,
     chiExponent
@@ -458,7 +619,7 @@ function processCompareData({
 }
 
 function renderCompareResults(data, sortOrder) {
-  const { u1Name, u2Name, u1TotalScore, u1SolvedCount, u2TotalScore, u2SolvedCount, hasUser2, scoringMode } = data;
+  const { u1Name, u2Name, u1TotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
   const statsContainer = document.getElementById('statsContainer');
   const tableHead = document.getElementById('tableHead');
 
@@ -473,11 +634,11 @@ function renderCompareResults(data, sortOrder) {
     statsContainer.innerHTML = `
       <div class="stat-box">
         <div class="val">${u1TotalScore.toLocaleString()}</div>
-        <div class="lbl">${u1Link} (${u1SolvedCount} solved)</div>
+        <div class="lbl">${u1Link} (${u1SolvedCount} solved • 🥇 ${u1Golds.toLocaleString()} / 💎 ${u1Diamonds.toLocaleString()})</div>
       </div>
       <div class="stat-box">
         <div class="val">${u2TotalScore.toLocaleString()}</div>
-        <div class="lbl">${u2Link} (${u2SolvedCount} solved)</div>
+        <div class="lbl">${u2Link} (${u2SolvedCount} solved • 🥇 ${u2Golds.toLocaleString()} / 💎 ${u2Diamonds.toLocaleString()})</div>
       </div>
       <div class="stat-box">
         <div class="val ${diffTotal > 0 ? 'diff-pos' : diffTotal < 0 ? 'diff-neg' : 'diff-zero'}">${diffSign}</div>
@@ -505,6 +666,10 @@ function renderCompareResults(data, sortOrder) {
         <div class="val">${u1SolvedCount}</div>
         <div class="lbl">Holes Solved</div>
       </div>
+      <div class="stat-box">
+        <div class="val">🥇 ${u1Golds.toLocaleString()} <span style="font-size: 0.85em; opacity: 0.85;">(💎 ${u1Diamonds.toLocaleString()})</span></div>
+        <div class="lbl">Golds & Diamonds</div>
+      </div>
     `;
 
     tableHead.innerHTML = `
@@ -516,15 +681,22 @@ function renderCompareResults(data, sortOrder) {
     `;
   }
 
-  sortAndRenderCompareTable(data.rows, sortOrder, hasUser2, scoringMode);
+  sortAndRenderCompareTable(data.rows, sortOrder, hasUser2, scoringMode, u1Name, u2Name);
   document.getElementById('resultsCard')?.classList.remove('hidden');
 }
 
-function formatLangDisplay(hole, lang, medal) {
+function formatLangDisplay(hole, lang, medal, golferName, allMedals = []) {
   if (!lang || lang === "N/A" || lang === "-") return "-";
   const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(lang)}`;
   const medalHtml = medal ? ` <span class="medal">${medal}</span>` : '';
-  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>${medalHtml}`;
+  
+  let extraHtml = '';
+  if (allMedals && allMedals.length > 1) {
+    const medalsJson = escapeHtml(JSON.stringify(allMedals));
+    extraHtml = ` <button type="button" class="extra-medals-btn" data-hole="${escapeHtml(hole)}" data-golfer="${escapeHtml(golferName)}" data-medals="${medalsJson}" style="background: none; border: none; color: #4da6ff; cursor: pointer; padding: 0 2px; font-weight: bold; text-decoration: underline;">(${allMedals.length})</button>`;
+  }
+
+  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>${medalHtml}${extraHtml}`;
 }
 
 function formatScoreDisplay(hole, lang, point, scoringMode) {
@@ -535,10 +707,7 @@ function formatScoreDisplay(hole, lang, point, scoringMode) {
   return `<a href="${scoreUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean"><strong>${point.toLocaleString()}</strong></a>`;
 }
 
-function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode) {
-  const resultsBody = document.getElementById('resultsBody');
-  const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
-
+function getSortedCompareRows(rows, sortOrder, filterText = '') {
   const sorted = [...rows].sort((a, b) => {
     if (sortOrder === 'u1-desc') return b.u1Point - a.u1Point || a.hole.localeCompare(b.hole);
     if (sortOrder === 'u2-desc') return b.u2Point - a.u2Point || a.hole.localeCompare(b.hole);
@@ -549,19 +718,28 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode) {
     return 0;
   });
 
+  if (filterText) {
+    return sorted.filter(r => r.hole.toLowerCase().includes(filterText));
+  }
+  return sorted;
+}
+
+function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Name, u2Name) {
+  const resultsBody = document.getElementById('resultsBody');
+  const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
+  const sorted = getSortedCompareRows(rows, sortOrder, filterText);
+
   resultsBody.innerHTML = '';
   sorted.forEach(r => {
-    if (filterText && !r.hole.toLowerCase().includes(filterText)) return;
-
     const tr = document.createElement('tr');
     const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
     const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a>`;
 
-    const u1LangDisplay = formatLangDisplay(r.hole, r.u1Lang, r.u1Medal);
+    const u1LangDisplay = formatLangDisplay(r.hole, r.u1Lang, r.u1Medal, u1Name, r.u1AllMedals);
     const u1ScoreDisplay = formatScoreDisplay(r.hole, r.u1Lang, r.u1Point, scoringMode);
 
     if (hasUser2) {
-      const u2LangDisplay = formatLangDisplay(r.hole, r.u2Lang, r.u2Medal);
+      const u2LangDisplay = formatLangDisplay(r.hole, r.u2Lang, r.u2Medal, u2Name, r.u2AllMedals);
       const u2ScoreDisplay = formatScoreDisplay(r.hole, r.u2Lang, r.u2Point, scoringMode);
       const diffClass = r.diff > 0 ? 'diff-pos' : r.diff < 0 ? 'diff-neg' : 'diff-zero';
       const diffText = r.diff > 0 ? `+${r.diff.toLocaleString()}` : r.diff.toLocaleString();
@@ -605,6 +783,7 @@ document.getElementById('scoringSelect')?.addEventListener('change', () => {
   }
 });
 
+// JSON Export for Compare
 document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
   const jsonStr = JSON.stringify(lastCompareResults.rows, null, 2);
@@ -618,6 +797,87 @@ document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 });
+
+// Markdown (.md) Export for Compare
+document.getElementById('dlResultsTxtBtn')?.addEventListener('click', () => {
+  if (!lastCompareResults) return;
+  const sortOrder = document.getElementById('activeSortSelect')?.value || 'u1-desc';
+  const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
+  const mdContent = generateCompareMarkdownTable(lastCompareResults, sortOrder, filterText);
+  downloadMarkdownFile('compare_results.md', mdContent);
+});
+
+function generateCompareMarkdownTable(compareData, sortOrder, filterText = '') {
+  const { rows, u1Name, u2Name, hasUser2 } = compareData;
+  const sortedRows = getSortedCompareRows(rows, sortOrder, filterText);
+
+  let headers = [];
+  let rightAlignCols = [];
+
+  if (hasUser2) {
+    headers = ['hole', `${u1Name} (lang)`, `${u1Name} (medals)`, `${u1Name} (score)`, `${u2Name} (lang)`, `${u2Name} (medals)`, `${u2Name} (score)`, 'diff'];
+    rightAlignCols = [3, 6, 7];
+  } else {
+    headers = ['hole', 'language', 'medals', 'points'];
+    rightAlignCols = [3];
+  }
+
+  const tableRows = sortedRows.map(r => {
+    if (hasUser2) {
+      const diffStr = r.diff > 0 ? `+${r.diff.toLocaleString()}` : r.diff.toLocaleString();
+      return [
+        r.hole,
+        r.u1Lang,
+        r.u1MedalsAscii,
+        r.u1Point.toLocaleString(),
+        r.u2Lang,
+        r.u2MedalsAscii,
+        r.u2Point.toLocaleString(),
+        diffStr
+      ];
+    } else {
+      return [
+        r.hole,
+        r.u1Lang,
+        r.u1MedalsAscii,
+        r.u1Point.toLocaleString()
+      ];
+    }
+  });
+
+  // Calculate visual width for every column
+  const colWidths = headers.map((header, colIdx) => {
+    let maxW = getVisualWidth(header);
+    tableRows.forEach(r => {
+      const w = getVisualWidth(r[colIdx]);
+      if (w > maxW) maxW = w;
+    });
+    return Math.max(maxW, 4);
+  });
+
+  const formatRow = (rowCells) => {
+    const formattedCells = rowCells.map((cell, idx) => {
+      const width = colWidths[idx];
+      return rightAlignCols.includes(idx)
+        ? padVisualStart(cell, width)
+        : padVisualEnd(cell, width);
+    });
+    return `| ${formattedCells.join(' | ')} |`;
+  };
+
+  const headerLine = formatRow(headers);
+
+  // Markdown Alignment Row (:--- left align, ---: right align)
+  const separatorCells = colWidths.map((w, idx) => {
+    const isRight = rightAlignCols.includes(idx);
+    return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
+  });
+  const separatorLine = `| ${separatorCells.join(' | ')} |`;
+
+  const dataLines = tableRows.map(r => formatRow(r));
+
+  return [headerLine, separatorLine, ...dataLines].join('\n');
+}
 
 // ==========================================
 // PAGE 2: Custom Leaderboard Logic (Bytes Only)
@@ -677,7 +937,6 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
 });
 
 function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard', chiExponent = 1) {
-  // Store initial input index (1-based seed rank)
   const targetMap = new Map();
   targetUsers.forEach((u, index) => {
     targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
@@ -815,13 +1074,11 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     });
   }
 
-  // Determine standard standings rank (Points desc, Bytes asc)
   leaderboard.sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     return a.bytes - b.bytes;
   });
 
-  // Calculate places rose (+) / fell (-)
   leaderboard.forEach((row, index) => {
     row.standardRank = index + 1;
     row.rankChange = row.initialRank - row.standardRank;
@@ -847,7 +1104,6 @@ function sortLeaderboardData(results, sortOrder) {
       if (absA !== absB) {
         return absB - absA;
       }
-      // Positive numbers take precedence over negative numbers with equal absolute value (+3 above -3)
       if (b.rankChange !== a.rankChange) {
         return b.rankChange - a.rankChange;
       }
@@ -855,7 +1111,6 @@ function sortLeaderboardData(results, sortOrder) {
       return a.bytes - b.bytes;
     }
 
-    // Default 'points-desc'
     if (b.points !== a.points) return b.points - a.points;
     return a.bytes - b.bytes;
   });
@@ -897,9 +1152,7 @@ document.getElementById('lbSortSelect')?.addEventListener('change', (e) => {
   }
 });
 
-// ==========================================
-// TXT Export Feature
-// ==========================================
+// Markdown (.md) Export for Leaderboard
 document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
     alert("No leaderboard data to export!");
@@ -907,15 +1160,16 @@ document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
   }
 
   const sortOrder = document.getElementById('lbSortSelect')?.value || 'points-desc';
-  const txtContent = generateAsciiTable(lastLeaderboardResults, sortOrder);
-  downloadTxtFile('leaderboard.txt', txtContent);
+  const mdContent = generateLeaderboardMarkdownTable(lastLeaderboardResults, sortOrder);
+  downloadMarkdownFile('leaderboard.md', mdContent);
 });
 
-function generateAsciiTable(results, sortOrder = 'points-desc') {
+function generateLeaderboardMarkdownTable(results, sortOrder = 'points-desc') {
   const sortedResults = sortLeaderboardData(results, sortOrder);
   const headers = ['#', 'golfer', 'holes', 'points', 'bytes', '+/-'];
+  const rightAlignCols = [0, 2, 3, 4, 5];
   
-  const rows = sortedResults.map((row) => [
+  const tableRows = sortedResults.map((row) => [
     String(row.standardRank),
     row.name,
     row.holes.toLocaleString(),
@@ -925,25 +1179,33 @@ function generateAsciiTable(results, sortOrder = 'points-desc') {
   ]);
 
   const colWidths = headers.map((header, colIdx) => {
-    let maxLen = header.length;
-    rows.forEach(r => {
-      if (r[colIdx].length > maxLen) {
-        maxLen = r[colIdx].length;
-      }
+    let maxW = getVisualWidth(header);
+    tableRows.forEach(r => {
+      const w = getVisualWidth(r[colIdx]);
+      if (w > maxW) maxW = w;
     });
-    return maxLen;
+    return Math.max(maxW, 4);
   });
 
   const formatRow = (rowCells) => {
-    return rowCells.map((cell, idx) => {
+    const formattedCells = rowCells.map((cell, idx) => {
       const width = colWidths[idx];
-      return idx === 1 ? cell.padEnd(width, ' ') : cell.padStart(width, ' ');
-    }).join(' | ');
+      return rightAlignCols.includes(idx)
+        ? padVisualStart(cell, width)
+        : padVisualEnd(cell, width);
+    });
+    return `| ${formattedCells.join(' | ')} |`;
   };
 
   const headerLine = formatRow(headers);
-  const separatorLine = colWidths.map(w => '-'.repeat(w)).join('-+-');
-  const dataLines = rows.map(r => formatRow(r));
+  
+  const separatorCells = colWidths.map((w, idx) => {
+    const isRight = rightAlignCols.includes(idx);
+    return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
+  });
+  const separatorLine = `| ${separatorCells.join(' | ')} |`;
+
+  const dataLines = tableRows.map(r => formatRow(r));
 
   return [headerLine, separatorLine, ...dataLines].join('\n');
 }
@@ -955,12 +1217,10 @@ function setupChiInput(valueElId, sliderElId) {
 
   if (!valueEl || !sliderEl) return;
 
-  // 1. Update text when slider moves
   sliderEl.addEventListener('input', (e) => {
     valueEl.textContent = e.target.value;
   });
 
-  // 2. Click text to manually enter a number from 1 to 1000
   valueEl.addEventListener('click', () => {
     const currentVal = valueEl.textContent;
     const input = prompt('Enter Holes Exponent (χ value 1 to 1000):', currentVal);
