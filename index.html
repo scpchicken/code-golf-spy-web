@@ -167,8 +167,11 @@
           <div class="form-group">
             <label for="scoringFormulaSelect">Scoring Formula</label>
             <select id="scoringFormulaSelect">
-              <option value="standard">Standard: ((N + 2) / (N + 3)) * S + (1 / (N + 3)) * Sa Sb</option>
-              <option value="alt">Alternative: ((N + 8) / (N + 9)) * S + (1 / (N + 9)) * Sa Sb</option>
+              <option value="standard">Standard (750 Min): ((N + 2) / (N + 3)) * S + (1 / (N + 3)) * Sa Sb</option>
+              <option value="alt">Alternative (900 Min): ((N + 8) / (N + 9)) * S + (1 / (N + 9)) * Sa Sb</option>
+              <option value="min950">High (950 Min): ((N + 18) / (N + 19)) * S + (1 / (N + 19)) * Sa Sb</option>
+              <option value="min999">Ultra (999 Min): ((N + 998) / (N + 999)) * S + (1 / (N + 999)) * Sa Sb</option>
+              <option value="min1000">Max (1000 Min): Flat 1000 Base (No Solver Penalty)</option>
             </select>
           </div>
         </div>

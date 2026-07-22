@@ -655,9 +655,24 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
 
   const allHoles = Array.from(globalHoleMin.keys());
   const leaderboard = [];
-
-  const offset1 = formulaType === 'alt' ? 8.0 : 2.0;
-  const offset2 = formulaType === 'alt' ? 9.0 : 3.0;
+  
+  // Determine offsets based on selected formula
+  let offset1 = 2.0;
+  let offset2 = 3.0;
+  let isFlat1000 = false;
+  
+  if (formulaType === 'alt') {
+    offset1 = 8.0;
+    offset2 = 9.0;
+  } else if (formulaType === 'min950') {
+    offset1 = 18.0;
+    offset2 = 19.0;
+  } else if (formulaType === 'min999') {
+    offset1 = 998.0;
+    offset2 = 999.0;
+  } else if (formulaType === 'min1000') {
+    isFlat1000 = true;
+  }
 
   for (const [targetLower, displayName] of targetMap.entries()) {
     let totalPoints = 0;
@@ -667,7 +682,7 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     for (const hole of allHoles) {
       const holeByteMin = globalHoleMin.get(hole);
       let bestHolePoint = 0;
-      let bestHoleByte = 0;
+      let bestHoleByte = Infinity; // Change initial value from 0 to Infinity
 
       for (const [langKey, langStat] of globalLangStats.entries()) {
         if (!langKey.startsWith(`${hole}::`)) continue;
@@ -679,11 +694,17 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
           const solCount = langStat.logins.size;
           const langByteMin = langStat.min_bytes;
           const sqrtN = Math.sqrt(solCount);
-
-          const sb = ((sqrtN + offset1) / (sqrtN + offset2)) * langByteMin + (1.0 / (sqrtN + offset2)) * holeByteMin;
+          
+          let sb;
+          if (isFlat1000) {
+            sb = langByteMin;
+          } else {
+            sb = ((sqrtN + offset1) / (sqrtN + offset2)) * langByteMin + (1.0 / (sqrtN + offset2)) * holeByteMin;
+          }
+          
           const point = (sb / loginByte) * 1000.0;
 
-          if (point > bestHolePoint) {
+          if (point > bestHolePoint || (point === bestHolePoint && loginByte < bestHoleByte)) {
             bestHolePoint = point;
             bestHoleByte = loginByte;
           }
