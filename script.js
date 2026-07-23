@@ -1,14 +1,13 @@
 /**
  * Code Golf Comparison & Custom Leaderboard Script
+ * (Uses IndexedDB for persistent storage + Diamond Bonus Support)
  */
 
 // --- Global Constants & State ---
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
 
-// Cache Keys for localStorage (ONLY Submissions/Solutions)
-const CACHE_KEYS = {
-  SUBMISSIONS: 'cg_solutions_cache'
-};
+const DB_NAME = 'CodeGolfCacheDB';
+const DB_STORE = 'solutionsStore';
 
 let lastCompareResults = null;
 let lastLeaderboardResults = [];
@@ -20,6 +19,43 @@ let currentCompareSortDir = 'desc';
 // Leaderboard Sort State
 let currentLbSortField = 'points';
 let currentLbSortDir = 'desc';
+
+// --- IndexedDB Helpers ---
+function openCacheDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE);
+      }
+    };
+    request.onsuccess = (e) => resolve(e.target.result);
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function saveSolutionsToIDB(data) {
+  const db = await openCacheDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    const store = tx.objectStore(DB_STORE);
+    const req = store.put(data, 'solutions');
+    req.onsuccess = () => resolve();
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function getSolutionsFromIDB() {
+  const db = await openCacheDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readonly');
+    const store = tx.objectStore(DB_STORE);
+    const req = store.get('solutions');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
 
 // --- Unicode & Visual Alignment Helpers ---
 function getVisualWidth(str) {
@@ -87,7 +123,7 @@ function getScoringMode() {
   return el && el.value ? el.value.toLowerCase() : 'bytes';
 }
 
-// --- LocalStorage & File Helpers ---
+// --- File Reading Helpers ---
 function readJsonFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -103,42 +139,29 @@ function readJsonFile(file) {
   });
 }
 
-/**
- * Retrieves Submissions JSON (solutions.json).
- * Priority: 1. Newly uploaded file -> 2. LocalStorage Cache
- */
 async function getSubmissionsData(fileInput) {
   const file = fileInput?.files?.[0];
 
   if (file) {
     const data = await readJsonFile(file);
     try {
-      localStorage.setItem(CACHE_KEYS.SUBMISSIONS, JSON.stringify(data));
-      console.log('Saved uploaded solutions.json to localStorage.');
+      await saveSolutionsToIDB(data);
     } catch (e) {
-      console.warn('Could not cache solutions.json to localStorage (likely exceeds ~5MB limit).', e);
+      console.warn('Could not cache solutions.json to IndexedDB.', e);
     }
     return data;
   }
 
-  // Check localStorage if no new file uploaded
-  const cached = localStorage.getItem(CACHE_KEYS.SUBMISSIONS);
-  if (cached) {
-    try {
-      console.log('Loaded solutions.json from localStorage cache.');
-      return JSON.parse(cached);
-    } catch (err) {
-      console.error('Corrupted solutions cache. Removing item.', err);
-      localStorage.removeItem(CACHE_KEYS.SUBMISSIONS);
-    }
+  try {
+    const cached = await getSolutionsFromIDB();
+    if (cached) return cached;
+  } catch (err) {
+    console.error('Error fetching from IndexedDB:', err);
   }
 
   return null;
 }
 
-/**
- * Retrieves auxiliary JSON files (holes/langs) directly without caching.
- */
 async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   if (fileInput && fileInput.files && fileInput.files[0]) {
     return await readJsonFile(fileInput.files[0]);
@@ -149,14 +172,9 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return await resp.json();
   } catch (err) {
-    console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}. Falling back to default behavior.`);
+    console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}.`);
     return null;
   }
-}
-
-function clearSolutionsCache() {
-  localStorage.removeItem(CACHE_KEYS.SUBMISSIONS);
-  console.log('Cleared cached solutions from localStorage.');
 }
 
 function downloadMarkdownFile(filename, text) {
@@ -250,7 +268,6 @@ document.getElementById('modalCloseBtn')?.addEventListener('click', () => {
   solutionsModal?.classList.add('hidden');
 });
 
-// Extra Medals Popup Modal
 function showExtraMedalsModal(hole, golfer, allMedals) {
   let modal = document.getElementById('extraMedalsModal');
   if (!modal) {
@@ -292,7 +309,6 @@ function showExtraMedalsModal(hole, golfer, allMedals) {
   modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
 }
 
-// Diff Breakdown Popup Modal
 function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
   let modal = document.getElementById('diffBreakdownModal');
   if (!modal) {
@@ -469,7 +485,7 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
   modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
 }
 
-// --- Event Delegation for Results Table ---
+// --- Event Delegation ---
 document.getElementById('resultsBody')?.addEventListener('click', (e) => {
   const diffBtn = e.target.closest('.diff-clickable');
   if (diffBtn) {
@@ -495,7 +511,7 @@ document.getElementById('resultsBody')?.addEventListener('click', (e) => {
   }
 });
 
-// --- Tab Navigation Switcher ---
+// Navigation Switcher
 const navCompareBtn = document.getElementById('navCompareBtn');
 const navLeaderboardBtn = document.getElementById('navLeaderboardBtn');
 const comparePage = document.getElementById('comparePage');
@@ -515,7 +531,7 @@ navLeaderboardBtn?.addEventListener('click', () => {
   comparePage.classList.add('hidden');
 });
 
-// Keyboard Shortcuts (Ctrl+Enter / Cmd+Enter)
+// Shortcuts
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
@@ -527,7 +543,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Default Golfers List Click Handler
 document.getElementById('leaderboardUsersLabel')?.addEventListener('click', (e) => {
   e.preventDefault();
   const input = document.getElementById('leaderboardUsersInput');
@@ -537,7 +552,6 @@ document.getElementById('leaderboardUsersLabel')?.addEventListener('click', (e) 
   }
 });
 
-// Download Help Buttons
 document.getElementById('dlSolutionsBtn')?.addEventListener('click', handleSolutionsDownload);
 document.getElementById('dlHolesBtn')?.addEventListener('click', () => window.open('https://code.golf/api/holes', '_blank'));
 document.getElementById('dlLangsBtn')?.addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
@@ -577,7 +591,6 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   try {
     const submissionsData = await getSubmissionsData(subFileInput);
     
-    // Fallback if no submissions JSON found anywhere
     if (!submissionsData) {
       hideLoading();
       handleSolutionsDownload();
@@ -1060,7 +1073,6 @@ function sortAndRenderCompareTable(rows, sortField, sortDir, hasUser2, scoringMo
   });
 }
 
-// Compare Controls Listeners
 document.getElementById('tableSearch')?.addEventListener('input', () => {
   if (lastCompareResults) renderCompareResults(lastCompareResults);
 });
@@ -1069,7 +1081,6 @@ document.getElementById('scoringSelect')?.addEventListener('change', () => {
   document.getElementById('goBtn')?.click();
 });
 
-// JSON Export for Compare
 document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
   const jsonStr = JSON.stringify(lastCompareResults.rows, null, 2);
@@ -1084,7 +1095,6 @@ document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
-// Markdown (.md) Export for Compare
 document.getElementById('dlResultsTxtBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
   const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
@@ -1201,6 +1211,7 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
 
     currentLbSortField = 'points';
     currentLbSortDir = 'desc';
+    updateLeaderboardScoresAndRanks();
     renderLeaderboard(lastLeaderboardResults);
   } catch (err) {
     alert(err.message);
@@ -1269,6 +1280,32 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     }
   }
 
+  // --- Calculate 💎 Diamond counts per user ---
+  const holeLangUsers = new Map();
+  for (const [userLangKey, byte] of userBestSubmissions.entries()) {
+    const parts = userLangKey.split("::");
+    const key = `${parts[0]}::${parts[1]}`;
+    const loginLower = parts[2];
+
+    if (!holeLangUsers.has(key)) holeLangUsers.set(key, []);
+    holeLangUsers.get(key).push({ login: loginLower, byte });
+  }
+
+  const diamondCounts = new Map();
+  for (const users of holeLangUsers.values()) {
+    users.sort((a, b) => a.byte - b.byte);
+    if (users.length === 0) continue;
+
+    const minByte = users[0].byte;
+    const tiedForFirst = users.filter(u => u.byte === minByte).length;
+
+    // A diamond is awarded for solo 1st place in a (hole, lang) submission
+    if (tiedForFirst === 1) {
+      const winner = users[0].login;
+      diamondCounts.set(winner, (diamondCounts.get(winner) || 0) + 1);
+    }
+  }
+
   const allHoles = Array.from(globalHoleMin.keys());
   const totalHolesCount = allHoles.length;
   const leaderboard = [];
@@ -1327,28 +1364,49 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
       }
     }
 
-    const totalPoints = Math.round(calculateHolePowerMean(userScores, totalHolesCount, chiExponent));
+    const basePoints = Math.round(calculateHolePowerMean(userScores, totalHolesCount, chiExponent));
+    const diamonds = diamondCounts.get(targetLower) || 0;
 
     leaderboard.push({
       name: userInfo.displayName,
       initialRank: userInfo.initialRank,
       holes: holesSolved,
-      points: totalPoints,
+      diamonds: diamonds,
+      diamondContrib: 0,
+      basePoints: basePoints,
+      points: basePoints,
       bytes: totalBytes
     });
   }
 
-  leaderboard.sort((a, b) => {
+  return leaderboard;
+}
+
+/**
+ * Recalculates effective points (base points + optional diamond bonus contribution)
+ * and updates standard ranks & rank changes for all golfers.
+ */
+function updateLeaderboardScoresAndRanks() {
+  if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) return;
+
+  const isDiamondBonusActive = document.getElementById('lbDiamondToggle')?.checked ?? false;
+  const diamondBonusVal = parseFloat(document.getElementById('lbDiamondValue')?.textContent || '0');
+
+  lastLeaderboardResults.forEach(row => {
+    const bonusCoeff = isDiamondBonusActive ? diamondBonusVal : 0;
+    row.diamondContrib = Math.round(row.diamonds * bonusCoeff);
+    row.points = Math.round(row.basePoints + row.diamondContrib);
+  });
+
+  const tempSorted = [...lastLeaderboardResults].sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     return a.bytes - b.bytes;
   });
 
-  leaderboard.forEach((row, index) => {
+  tempSorted.forEach((row, index) => {
     row.standardRank = index + 1;
     row.rankChange = row.initialRank - row.standardRank;
   });
-
-  return leaderboard;
 }
 
 function sortLeaderboardData(results, sortField = 'points', sortDir = 'desc') {
@@ -1359,6 +1417,7 @@ function sortLeaderboardData(results, sortField = 'points', sortDir = 'desc') {
       return sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     }
     else if (sortField === 'holes') { valA = a.holes; valB = b.holes; }
+    else if (sortField === 'diamonds') { valA = a.diamondContrib; valB = b.diamondContrib; }
     else if (sortField === 'points') { valA = a.points; valB = b.points; }
     else if (sortField === 'bytes') { valA = a.bytes; valB = b.bytes; }
     else if (sortField === 'change') { valA = a.rankChange; valB = b.rankChange; }
@@ -1379,6 +1438,7 @@ function renderLeaderboard(results) {
     const nameArrow = currentLbSortField === 'name' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
     const holesArrow = currentLbSortField === 'holes' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
     const pointsArrow = currentLbSortField === 'points' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const diamondsArrow = currentLbSortField === 'diamonds' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
     const bytesArrow = currentLbSortField === 'bytes' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
     const changeArrow = currentLbSortField === 'change' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
 
@@ -1390,6 +1450,7 @@ function renderLeaderboard(results) {
         <th id="thLbName" style="${thStyle('name')}">Name${nameArrow}</th>
         <th id="thLbHoles" style="${thStyle('holes')}">Holes${holesArrow}</th>
         <th id="thLbPoints" style="text-align: right; ${thStyle('points')}">Points${pointsArrow}</th>
+        <th id="thLbDiamonds" style="text-align: right; ${thStyle('diamonds')}">💎${diamondsArrow}</th>
         <th id="thLbBytes" style="text-align: right; ${thStyle('bytes')}">Bytes${bytesArrow}</th>
         <th id="thLbChange" style="text-align: right; ${thStyle('change')}">+/-${changeArrow}</th>
       </tr>
@@ -1412,6 +1473,7 @@ function renderLeaderboard(results) {
     bindLbSort('thLbName', 'name', 'asc');
     bindLbSort('thLbHoles', 'holes', 'desc');
     bindLbSort('thLbPoints', 'points', 'desc');
+    bindLbSort('thLbDiamonds', 'diamonds', 'desc');
     bindLbSort('thLbBytes', 'bytes', 'asc');
     bindLbSort('thLbChange', 'change', 'desc');
   }
@@ -1431,6 +1493,7 @@ function renderLeaderboard(results) {
       <td><strong>${getGolferLink(row.name)}</strong></td>
       <td>${row.holes.toLocaleString()}</td>
       <td style="text-align: right;"><strong>${row.points.toLocaleString()}</strong></td>
+      <td style="text-align: right;">${row.diamondContrib.toLocaleString()}</td>
       <td style="text-align: right;">${row.bytes.toLocaleString()}</td>
       <td style="text-align: right;" class="${diffClass}"><strong>${changeSign}</strong></td>
     `;
@@ -1440,7 +1503,7 @@ function renderLeaderboard(results) {
   document.getElementById('lbResultsCard')?.classList.remove('hidden');
 }
 
-// Markdown (.md) Export for Leaderboard
+// Export Leaderboard Markdown
 document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
     alert("No leaderboard data to export!");
@@ -1453,14 +1516,15 @@ document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
 
 function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir = 'desc') {
   const sortedResults = sortLeaderboardData(results, sortField, sortDir);
-  const headers = ['#', 'golfer', 'holes', 'points', 'bytes', '+/-'];
-  const rightAlignCols = [0, 2, 3, 4, 5];
+  const headers = ['#', 'golfer', 'holes', 'points', '💎', 'bytes', '+/-'];
+  const rightAlignCols = [0, 2, 3, 4, 5, 6];
   
   const tableRows = sortedResults.map((row) => [
     String(row.standardRank),
     row.name,
     row.holes.toLocaleString(),
     row.points.toLocaleString(),
+    row.diamondContrib.toLocaleString(),
     row.bytes.toLocaleString(),
     row.rankChange > 0 ? `+${row.rankChange}` : String(row.rankChange)
   ]);
@@ -1495,35 +1559,54 @@ function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir
   return [headerLine, separatorLine, ...dataLines].join('\n');
 }
 
-// --- Chi Exponent Control Setup ---
-function setupChiInput(valueElId, sliderElId) {
+// --- Universal Numeric Control Setup (Sliders + Prompts) ---
+function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
   const valueEl = document.getElementById(valueElId);
   const sliderEl = document.getElementById(sliderElId);
 
   if (!valueEl || !sliderEl) return;
 
+  const handleUpdate = () => {
+    if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
+      updateLeaderboardScoresAndRanks();
+      renderLeaderboard(lastLeaderboardResults);
+    }
+  };
+
   sliderEl.addEventListener('input', (e) => {
     valueEl.textContent = e.target.value;
+    handleUpdate();
   });
 
   const clickTarget = valueEl.closest('label') || valueEl.parentElement || valueEl;
 
-  clickTarget.addEventListener('click', () => {
+  clickTarget.addEventListener('click', (e) => {
+    if (e.target === sliderEl) return;
     const currentVal = valueEl.textContent;
-    const input = prompt('Enter Holes Exponent (χ value 1 to 1000):', currentVal);
+    const input = prompt(`Enter manual value (${minVal} to ${maxVal}):`, currentVal);
 
     if (input !== null) {
       const num = parseFloat(input);
-      if (!isNaN(num) && num >= 1 && num <= 1000) {
+      if (!isNaN(num) && num >= minVal && num <= maxVal) {
         valueEl.textContent = num;
         sliderEl.value = Math.min(num, parseFloat(sliderEl.max));
+        handleUpdate();
       } else {
-        alert('Please enter a valid number between 1 and 1000.');
+        alert(`Please enter a valid number between ${minVal} and ${maxVal}.`);
       }
     }
   });
 }
 
-// Initialize Chi controls for both tabs
-setupChiInput('chiValue', 'chiSlider');
-setupChiInput('lbChiValue', 'lbChiSlider');
+// Dynamic Listener for Diamond Bonus Toggle Switch
+document.getElementById('lbDiamondToggle')?.addEventListener('change', () => {
+  if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
+    updateLeaderboardScoresAndRanks();
+    renderLeaderboard(lastLeaderboardResults);
+  }
+});
+
+// Initialize Chi and Diamond controls
+setupSliderControl('chiValue', 'chiSlider', 1, 1000);
+setupSliderControl('lbChiValue', 'lbChiSlider', 1, 1000);
+setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30);

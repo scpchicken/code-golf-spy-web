@@ -350,7 +350,11 @@ tr:hover td {
 #lbResultsTable th:nth-child(4),
 #lbResultsTable td:nth-child(4),
 #lbResultsTable th:nth-child(5),
-#lbResultsTable td:nth-child(5) {
+#lbResultsTable td:nth-child(5),
+#lbResultsTable th:nth-child(6),
+#lbResultsTable td:nth-child(6),
+#lbResultsTable th:nth-child(7),
+#lbResultsTable td:nth-child(7) {
   text-align: right;
 }
 

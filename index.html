@@ -205,6 +205,20 @@
           </div>
         </div>
 
+        <div class="diamond-controls-group" style="display: flex; align-items: center; gap: 16px; margin: 12px 0; flex-wrap: wrap;">
+          <!-- Toggle Switch -->
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="lbDiamondToggle" style="cursor: pointer;">
+            <strong>Enable Diamond Bonus</strong>
+          </label>
+        
+          <!-- Slider & Value Display -->
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+            <span>Diamond Bonus (χ): <strong id="lbDiamondValue" style="color: #38bdf8; text-decoration: underline;">0</strong> pts/💎</span>
+            <input type="range" id="lbDiamondSlider" min="0" max="30" value="0" step="1" style="cursor: pointer;">
+          </label>
+        </div>
+
         <div class="button-group" style="margin-top: 1.5rem;">
           <button class="btn-submit" id="lbGoBtn">Generate Leaderboard</button>
         </div>
@@ -227,6 +241,7 @@
                 <th>Name</th>
                 <th>Holes</th>
                 <th>Points</th>
+                <th style="text-align: right;">💎</th>
                 <th>Bytes</th>
                 <th style="text-align: right;" title="Places rose (+) or fell (-)">+/-</th>
               </tr>
