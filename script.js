@@ -1,6 +1,6 @@
 /**
  * Code Golf Comparison & Custom Leaderboard Script
- * (Diamond Bonus Support)
+ * (Diamond Bonus, Dynamic Base Min Score, Hole Exponent (χ), & Lang Exponent (λ) Support)
  */
 
 // --- Global Constants & State ---
@@ -51,6 +51,29 @@ function calculateHolePowerMean(holeScores, totalHoles, chi) {
   const sumPow = holeScores.reduce((acc, score) => acc + Math.pow(score, chi), 0);
   const mean = Math.pow(sumPow / totalHoles, 1 / chi);
   return mean * totalHoles;
+}
+
+/**
+ * Generalized Power Mean across Languages for a Hole (M_lambda).
+ * Max-scaled to ensure numerical stability up to lambda = 1000.
+ */
+function calculateLangPowerMean(langScores, totalLangs, lambda) {
+  if (totalLangs === 0) return 0;
+  if (lambda >= 1000) {
+    return Math.max(...langScores, 0);
+  }
+  const maxScore = Math.max(...langScores, 0);
+  if (maxScore === 0) return 0;
+
+  if (lambda === 1) {
+    return langScores.reduce((acc, score) => acc + score, 0) / totalLangs;
+  }
+
+  const sumScaledPow = langScores.reduce((acc, score) => {
+    return acc + Math.pow(score / maxScore, lambda);
+  }, 0);
+
+  return maxScore * Math.pow(sumScaledPow / totalLangs, 1 / lambda);
 }
 
 // --- General UI Helper Functions ---
@@ -508,8 +531,9 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   const u1Name = document.getElementById('user1Input')?.value.trim() || '';
   const u2Name = document.getElementById('user2Input')?.value.trim() || '';
   const scoringMode = getScoringMode();
-  const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard';
+  const minScore = parseFloat(document.getElementById('formulaValue')?.textContent || 750);
   const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || 1);
+  const lambdaExponent = parseFloat(document.getElementById('lambdaSlider')?.value || 1000);
   const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || 0);
   const langFilter = (document.getElementById('langFilterInput')?.value || '').trim().toLowerCase();
 
@@ -553,8 +577,9 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
       u1Name,
       u2Name,
       scoringMode,
-      formulaType,
+      minScore,
       chiExponent,
+      lambdaExponent,
       diamondBonus,
       langFilter,
       holesJson: holesData,
@@ -577,8 +602,9 @@ function processCompareData({
   u1Name, 
   u2Name, 
   scoringMode, 
-  formulaType = 'standard', 
+  minScore = 750, 
   chiExponent = 1,
+  lambdaExponent = 1000,
   diamondBonus = 0,
   langFilter, 
   holesJson, 
@@ -589,13 +615,9 @@ function processCompareData({
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
 
-  let offset1 = 2.0, offset2 = 3.0;
-  let isFlat1000 = false;
-
-  if (formulaType === 'alt') { offset1 = 8.0; offset2 = 9.0; }
-  else if (formulaType === 'min950') { offset1 = 18.0; offset2 = 19.0; }
-  else if (formulaType === 'min999') { offset1 = 998.0; offset2 = 999.0; }
-  else if (formulaType === 'min1000') { isFlat1000 = true; }
+  const isFlat1000 = minScore >= 1000;
+  const offset2 = isFlat1000 ? 0 : minScore / (1000 - minScore);
+  const offset1 = isFlat1000 ? 0 : offset2 - 1;
 
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
@@ -651,6 +673,12 @@ function processCompareData({
       userBestSubmissions.set(userLangKey, byte);
     }
   }
+
+  const allLangsSet = new Set();
+  for (const langKey of globalLangStats.keys()) {
+    allLangsSet.add(langKey.split("::")[1]);
+  }
+  const totalLangsCount = validLangs ? validLangs.size : (allLangsSet.size || 1);
 
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
@@ -746,9 +774,16 @@ function processCompareData({
     });
 
     const best = candidates[candidates.length - 1];
-    const roundedPoint = Math.round(best.point);
 
-    if (roundedPoint === 0) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-", allLangScores: [] };
+    let finalPoint = 0;
+    if (lambdaExponent >= 1000) {
+      finalPoint = Math.round(best.point);
+    } else {
+      const langScores = candidates.map(c => c.point);
+      finalPoint = Math.round(calculateLangPowerMean(langScores, totalLangsCount, lambdaExponent));
+    }
+
+    if (finalPoint === 0) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-", allLangScores: [] };
 
     const allMedals = candidates.filter(c => c.medal !== "").sort(compareMedalCandidates);
 
@@ -769,7 +804,7 @@ function processCompareData({
 
     return {
       lang: best.lang,
-      point: roundedPoint,
+      point: finalPoint,
       medal: best.medal,
       allMedals,
       medalsAscii,
@@ -846,6 +881,7 @@ function processCompareData({
     hasUser2,
     scoringMode,
     chiExponent,
+    lambdaExponent,
     diamondBonus
   };
 }
@@ -863,7 +899,7 @@ function updateCompareScores() {
   const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
 
   const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, 1));
-  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
+  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
 
   lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
   lastCompareResults.u1RawTotalScore = u1RawBaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
@@ -1146,8 +1182,9 @@ function generateCompareMarkdownTable(compareData, sortField, sortDir, filterTex
 // ==========================================
 document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const inputVal = document.getElementById('leaderboardUsersInput')?.value.trim() || '';
-  const formulaType = document.getElementById('scoringFormulaSelect')?.value || 'standard';
+  const minScore = parseFloat(document.getElementById('lbFormulaValue')?.textContent || 750);
   const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
+  const lambdaExponent = parseFloat(document.getElementById('lbLambdaSlider')?.value || 1000);
   
   const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
@@ -1187,8 +1224,9 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       holesData,
       langsData,
       includeExperimental,
-      formulaType,
-      chiExponent
+      minScore,
+      chiExponent,
+      lambdaExponent
     );
 
     currentLbSortField = 'points';
@@ -1202,7 +1240,7 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   }
 });
 
-function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, formulaType = 'standard', chiExponent = 1) {
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, minScore = 750, chiExponent = 1, lambdaExponent = 1000) {
   const targetMap = new Map();
   targetUsers.forEach((u, index) => {
     targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
@@ -1262,6 +1300,12 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     }
   }
 
+  const allLangsSet = new Set();
+  for (const langKey of globalLangStats.keys()) {
+    allLangsSet.add(langKey.split("::")[1]);
+  }
+  const totalLangsCount = validLangs ? validLangs.size : (allLangsSet.size || 1);
+
   // --- Calculate 💎 Diamond counts per user ---
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
@@ -1281,7 +1325,6 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     const minByte = users[0].byte;
     const tiedForFirst = users.filter(u => u.byte === minByte).length;
 
-    // A diamond is awarded for solo 1st place in a (hole, lang) submission
     if (tiedForFirst === 1) {
       const winner = users[0].login;
       diamondCounts.set(winner, (diamondCounts.get(winner) || 0) + 1);
@@ -1292,13 +1335,9 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   const totalHolesCount = allHoles.length;
   const leaderboard = [];
   
-  let offset1 = 2.0, offset2 = 3.0;
-  let isFlat1000 = false;
-  
-  if (formulaType === 'alt') { offset1 = 8.0; offset2 = 9.0; }
-  else if (formulaType === 'min950') { offset1 = 18.0; offset2 = 19.0; }
-  else if (formulaType === 'min999') { offset1 = 998.0; offset2 = 999.0; }
-  else if (formulaType === 'min1000') { isFlat1000 = true; }
+  const isFlat1000 = minScore >= 1000;
+  const offset2 = isFlat1000 ? 0 : minScore / (1000 - minScore);
+  const offset1 = isFlat1000 ? 0 : offset2 - 1;
 
   for (const [targetLower, userInfo] of targetMap.entries()) {
     let totalBytes = 0;
@@ -1307,8 +1346,8 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
 
     for (const hole of allHoles) {
       const holeByteMin = globalHoleMin.get(hole);
-      let bestHolePoint = 0;
       let bestHoleByte = Infinity;
+      const userHoleLangScores = [];
 
       for (const [langKey, langStat] of globalLangStats.entries()) {
         if (!langKey.startsWith(`${hole}::`)) continue;
@@ -1329,15 +1368,24 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
           }
           
           const point = (sb / loginByte) * 1000.0;
+          userHoleLangScores.push(point);
 
-          if (point > bestHolePoint || (point === bestHolePoint && loginByte < bestHoleByte)) {
-            bestHolePoint = point;
+          if (loginByte < bestHoleByte) {
             bestHoleByte = loginByte;
           }
         }
       }
 
-      const roundedPoint = bestHolePoint > 0 ? Math.round(bestHolePoint) : 0;
+      let holePoint = 0;
+      if (userHoleLangScores.length > 0) {
+        if (lambdaExponent >= 1000) {
+          holePoint = Math.max(...userHoleLangScores, 0);
+        } else {
+          holePoint = calculateLangPowerMean(userHoleLangScores, totalLangsCount, lambdaExponent);
+        }
+      }
+
+      const roundedPoint = holePoint > 0 ? Math.round(holePoint) : 0;
       userScores.push(roundedPoint);
 
       if (roundedPoint > 0) {
@@ -1540,25 +1588,43 @@ function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir
 }
 
 // --- Universal Numeric Control Setup (Sliders + Prompts) ---
-function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
+function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, requiresReprocess = false, isInfinityMax = false) {
   const valueEl = document.getElementById(valueElId);
   const sliderEl = document.getElementById(sliderElId);
 
   if (!valueEl || !sliderEl) return;
 
+  const formatVal = (val) => {
+    const num = parseFloat(val);
+    if (isInfinityMax && num >= maxVal) return '∞';
+    return num;
+  };
+
   const handleUpdate = () => {
-    if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
-      updateLeaderboardScoresAndRanks();
-      renderLeaderboard(lastLeaderboardResults);
-    }
-    if (lastCompareResults) {
-      updateCompareScores();
-      renderCompareResults(lastCompareResults);
+    if (requiresReprocess) {
+      if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
+        if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
+          document.getElementById('lbGoBtn')?.click();
+        }
+      } else {
+        if (lastCompareResults) {
+          document.getElementById('goBtn')?.click();
+        }
+      }
+    } else {
+      if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
+        updateLeaderboardScoresAndRanks();
+        renderLeaderboard(lastLeaderboardResults);
+      }
+      if (lastCompareResults) {
+        updateCompareScores();
+        renderCompareResults(lastCompareResults);
+      }
     }
   };
 
   sliderEl.addEventListener('input', (e) => {
-    valueEl.textContent = e.target.value;
+    valueEl.textContent = formatVal(e.target.value);
     handleUpdate();
   });
 
@@ -1566,14 +1632,14 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
 
   clickTarget.addEventListener('click', (e) => {
     if (e.target === sliderEl) return;
-    const currentVal = valueEl.textContent;
+    const currentVal = sliderEl.value;
     const input = prompt(`Enter manual value (${minVal} to ${maxVal}):`, currentVal);
 
     if (input !== null) {
       const num = parseFloat(input);
       if (!isNaN(num) && num >= minVal && num <= maxVal) {
-        valueEl.textContent = num;
-        sliderEl.value = Math.min(num, parseFloat(sliderEl.max));
+        sliderEl.value = num;
+        valueEl.textContent = formatVal(num);
         handleUpdate();
       } else {
         alert(`Please enter a valid number between ${minVal} and ${maxVal}.`);
@@ -1582,8 +1648,13 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
   });
 }
 
-// Initialize Chi and Diamond controls
+// Initialize controls
 setupSliderControl('chiValue', 'chiSlider', 1, 1000);
+setupSliderControl('lambdaValue', 'lambdaSlider', 1, 1000);
 setupSliderControl('diamondValue', 'diamondSlider', 0, 30);
+setupSliderControl('formulaValue', 'formulaSlider', 1, 1000);
+
 setupSliderControl('lbChiValue', 'lbChiSlider', 1, 1000);
+setupSliderControl('lbLambdaValue', 'lbLambdaSlider', 1, 1000, false, true);
 setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30);
+setupSliderControl('lbFormulaValue', 'lbFormulaSlider', 1, 1000);

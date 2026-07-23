@@ -2,15 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Favicons for browsers -->
   <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png">
-  
-  <!-- Apple Touch Icon (iOS Home Screen) -->
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-  
-  <!-- Web App Manifest (Android Chrome) -->
   <link rel="manifest" href="icons/site.webmanifest">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Code Golf Leaderboard & Comparison Tool</title>
@@ -28,7 +23,7 @@
     <div class="spinner"></div>
   </div>
 
-  <!-- Custom Solutions Download Modal (Prevents Popup Blocking) -->
+  <!-- Custom Solutions Download Modal -->
   <div id="solutionsModal" class="loading-overlay hidden" style="background: rgba(0,0,0,0.75); z-index: 1000;">
     <div class="card" style="max-width: 420px; width: 90%; text-align: center; display: flex; flex-direction: column; gap: 1rem;">
       <h3 style="margin: 0; color: var(--accent);">Download solutions.json</h3>
@@ -74,17 +69,23 @@
             </select>
           </div>
 
+          <!-- Base Min Score Formula Slider -->
           <div class="form-group">
-            <label for="compareScoringFormulaSelect">Scoring Formula</label>
-            <select id="compareScoringFormulaSelect">
-              <option value="standard">Standard (750 Min): ((N + 2) / (N + 3)) * S + (1 / (N + 3)) * Sa Sb</option>
-              <option value="alt">Alternative (900 Min): ((N + 8) / (N + 9)) * S + (1 / (N + 9)) * Sa Sb</option>
-              <option value="min950">High (950 Min): ((N + 18) / (N + 19)) * S + (1 / (N + 19)) * Sa Sb</option>
-              <option value="min999">Ultra (999 Min): ((N + 998) / (N + 999)) * S + (1 / (N + 999)) * Sa Sb</option>
-              <option value="min1000">Max (1000 Min): Flat 1000 Base (No Solver Penalty)</option>
-            </select>
+            <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
+              Base Min Score:&nbsp;<span id="formulaValue">750</span>
+            </label>
+            <input 
+              type="range" 
+              id="formulaSlider" 
+              min="1" 
+              max="1000" 
+              step="1" 
+              value="750"
+              title="1–1000 Base Minimum Score (750 = Standard, 1000 = Flat Base)"
+            >
           </div>
 
+          <!-- Hole Exponent Slider -->
           <div class="form-group">
             <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
               Hole Exponent (χ):&nbsp;<span id="chiValue">1</span>
@@ -100,7 +101,23 @@
             >
           </div>
 
-          <!-- Diamond Bonus Slider Option for Comparison Page -->
+          <!-- Language Exponent Slider -->
+          <div class="form-group">
+            <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
+              Lang Exponent (λ):&nbsp;<span id="lambdaValue">∞</span>
+            </label>
+            <input 
+              type="range" 
+              id="lambdaSlider" 
+              min="1" 
+              max="1000" 
+              step="1" 
+              value="1000"
+              title="1–1000 Language Exponent (1000 = Max/∞, lower values allow all solutions to contribute)"
+            >
+          </div>
+
+          <!-- Diamond Bonus Slider -->
           <div class="form-group">
             <label class="clickable-setting" title="Click to manually enter a value (0–30)">
               Diamond Bonus:&nbsp;<span id="diamondValue">0</span>&nbsp;pts/💎
@@ -193,16 +210,20 @@
             >
           </div>
 
-          <!-- Formula Switch Option -->
+          <!-- Base Min Score Formula Slider -->
           <div class="form-group">
-            <label for="scoringFormulaSelect">Scoring Formula</label>
-            <select id="scoringFormulaSelect">
-              <option value="standard">Standard (750 Min): ((N + 2) / (N + 3)) * S + (1 / (N + 3)) * Sa Sb</option>
-              <option value="alt">Alternative (900 Min): ((N + 8) / (N + 9)) * S + (1 / (N + 9)) * Sa Sb</option>
-              <option value="min950">High (950 Min): ((N + 18) / (N + 19)) * S + (1 / (N + 19)) * Sa Sb</option>
-              <option value="min999">Ultra (999 Min): ((N + 998) / (N + 999)) * S + (1 / (N + 999)) * Sa Sb</option>
-              <option value="min1000">Max (1000 Min): Flat 1000 Base (No Solver Penalty)</option>
-            </select>
+            <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
+              Base Min Score:&nbsp;<span id="lbFormulaValue">750</span>
+            </label>
+            <input 
+              type="range" 
+              id="lbFormulaSlider" 
+              min="1" 
+              max="1000" 
+              step="1" 
+              value="750"
+              title="1–1000 Base Minimum Score (750 = Standard, 1000 = Flat Base)"
+            >
           </div>
 
           <!-- Chi Exponent Slider Option -->
@@ -218,6 +239,22 @@
               step="0.5" 
               value="1"
               title="1 = Standard Average, higher values favor quality over quantity"
+            >
+          </div>
+
+          <!-- Language Exponent Slider Option -->
+          <div class="form-group">
+            <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
+              Lang Exponent (λ):&nbsp;<span id="lbLambdaValue">∞</span>
+            </label>
+            <input 
+              type="range" 
+              id="lbLambdaSlider" 
+              min="1" 
+              max="1000" 
+              step="1" 
+              value="1000"
+              title="1–1000 Language Exponent (1000 = Max/∞, lower values allow all solutions to contribute)"
             >
           </div>
 
@@ -259,10 +296,10 @@
                 <th>#</th>
                 <th>Name</th>
                 <th>Holes</th>
-                <th>Points</th>
+                <th style="text-align: right;">Points</th>
                 <th style="text-align: right;">💎</th>
-                <th>Bytes</th>
-                <th style="text-align: right;" title="Places rose (+) or fell (-)">+/-</th>
+                <th style="text-align: right;">Bytes</th>
+                <th style="text-align: right;">+/-</th>
               </tr>
             </thead>
             <tbody id="lbResultsBody"></tbody>
@@ -271,15 +308,6 @@
       </div>
     </div>
   </div>
-
-  <footer class="app-footer">
-    <p>
-      View source on 
-      <a href="https://github.com/scpchicken/code-golf-spy-web" target="_blank" rel="noopener noreferrer">
-        GitHub
-      </a>
-    </p>
-  </footer>
 
   <script src="script.js"></script>
 </body>
