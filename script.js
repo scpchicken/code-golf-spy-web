@@ -162,11 +162,16 @@ function compareMedalCandidates(a, b) {
   const rankA = medalRank[a.medal] || 5;
   const rankB = medalRank[b.medal] || 5;
 
+  // 1. Sort by Medal Tier (Diamond -> Gold -> Silver -> Bronze)
   if (rankA !== rankB) return rankA - rankB;
-  if (a.loginByte !== undefined && b.loginByte !== undefined && a.loginByte !== b.loginByte) {
-    return a.loginByte - b.loginByte;
-  }
-  return (b.point || 0) - (a.point || 0);
+
+  // 2. Sort by Points (Highest score first)
+  const ptA = a.point || 0;
+  const ptB = b.point || 0;
+  if (ptA !== ptB) return ptB - ptA;
+
+  // 3. Tiebreaker: Lowest byte count
+  return (a.loginByte || 0) - (b.loginByte || 0);
 }
 
 function formatLangDisplay(hole, lang) {
@@ -882,7 +887,8 @@ function processCompareData({
     scoringMode,
     chiExponent,
     lambdaExponent,
-    diamondBonus
+    diamondBonus,
+    totalLangsCount
   };
 }
 
@@ -890,8 +896,39 @@ function updateCompareScores() {
   if (!lastCompareResults) return;
   const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || '0');
   const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || '1');
+  const lambdaExponent = parseFloat(document.getElementById('lambdaSlider')?.value || '1000');
 
   const totalHoles = lastCompareResults.rows.length;
+  const totalLangsCount = lastCompareResults.totalLangsCount || 1;
+
+  // Recalculate each row's u1Point and u2Point based on lambdaExponent
+  lastCompareResults.rows.forEach(r => {
+    if (r.u1AllLangs && r.u1AllLangs.length > 0) {
+      const u1LangScores = r.u1AllLangs.map(c => c.point);
+      if (lambdaExponent >= 1000) {
+        r.u1Point = Math.round(Math.max(...u1LangScores, 0));
+      } else {
+        r.u1Point = Math.round(calculateLangPowerMean(u1LangScores, totalLangsCount, lambdaExponent));
+      }
+    } else {
+      r.u1Point = 0;
+    }
+
+    if (lastCompareResults.hasUser2) {
+      if (r.u2AllLangs && r.u2AllLangs.length > 0) {
+        const u2LangScores = r.u2AllLangs.map(c => c.point);
+        if (lambdaExponent >= 1000) {
+          r.u2Point = Math.round(Math.max(...u2LangScores, 0));
+        } else {
+          r.u2Point = Math.round(calculateLangPowerMean(u2LangScores, totalLangsCount, lambdaExponent));
+        }
+      } else {
+        r.u2Point = 0;
+      }
+      r.diff = r.u1Point - r.u2Point;
+    }
+  });
+
   const u1Scores = lastCompareResults.rows.map(r => r.u1Point);
   const u2Scores = lastCompareResults.rows.map(r => r.u2Point);
 
@@ -899,7 +936,7 @@ function updateCompareScores() {
   const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
 
   const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, 1));
-  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
+  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
 
   lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
   lastCompareResults.u1RawTotalScore = u1RawBaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
@@ -1343,6 +1380,7 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
     let totalBytes = 0;
     let holesSolved = 0;
     const userScores = [];
+    const userHoleLangScoresList = [];
 
     for (const hole of allHoles) {
       const holeByteMin = globalHoleMin.get(hole);
@@ -1376,6 +1414,8 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
         }
       }
 
+      userHoleLangScoresList.push(userHoleLangScores);
+
       let holePoint = 0;
       if (userHoleLangScores.length > 0) {
         if (lambdaExponent >= 1000) {
@@ -1405,7 +1445,10 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
       diamondContrib: 0,
       basePoints: basePoints,
       points: basePoints,
-      bytes: totalBytes
+      bytes: totalBytes,
+      userHoleLangScoresList: userHoleLangScoresList,
+      totalLangsCount: totalLangsCount,
+      totalHolesCount: totalHolesCount
     });
   }
 
@@ -1419,9 +1462,26 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
 function updateLeaderboardScoresAndRanks() {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) return;
 
+  const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || '1');
+  const lambdaExponent = parseFloat(document.getElementById('lbLambdaSlider')?.value || '1000');
   const diamondBonusVal = parseFloat(document.getElementById('lbDiamondValue')?.textContent || '0');
 
   lastLeaderboardResults.forEach(row => {
+    if (row.userHoleLangScoresList) {
+      const userScores = row.userHoleLangScoresList.map(langScores => {
+        if (!langScores || langScores.length === 0) return 0;
+        let holePoint = 0;
+        if (lambdaExponent >= 1000) {
+          holePoint = Math.max(...langScores, 0);
+        } else {
+          holePoint = calculateLangPowerMean(langScores, row.totalLangsCount || 1, lambdaExponent);
+        }
+        return holePoint > 0 ? Math.round(holePoint) : 0;
+      });
+
+      row.basePoints = Math.round(calculateHolePowerMean(userScores, row.totalHolesCount || userScores.length, chiExponent));
+    }
+
     row.diamondContrib = Math.round(row.diamonds * diamondBonusVal);
     row.points = Math.round(row.basePoints + row.diamondContrib);
   });
@@ -1588,7 +1648,7 @@ function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir
 }
 
 // --- Universal Numeric Control Setup (Sliders + Prompts) ---
-function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, requiresReprocess = false, isInfinityMax = false) {
+function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, autoUpdate = true, isInfinityMax = false) {
   const valueEl = document.getElementById(valueElId);
   const sliderEl = document.getElementById(sliderElId);
 
@@ -1601,21 +1661,14 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, re
   };
 
   const handleUpdate = () => {
-    if (requiresReprocess) {
-      if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
-        if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
-          document.getElementById('lbGoBtn')?.click();
-        }
-      } else {
-        if (lastCompareResults) {
-          document.getElementById('goBtn')?.click();
-        }
-      }
-    } else {
+    if (!autoUpdate) return;
+
+    if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
       if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
         updateLeaderboardScoresAndRanks();
         renderLeaderboard(lastLeaderboardResults);
       }
+    } else {
       if (lastCompareResults) {
         updateCompareScores();
         renderCompareResults(lastCompareResults);
@@ -1649,12 +1702,12 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, re
 }
 
 // Initialize controls
-setupSliderControl('chiValue', 'chiSlider', 1, 1000);
-setupSliderControl('lambdaValue', 'lambdaSlider', 1, 1000);
-setupSliderControl('diamondValue', 'diamondSlider', 0, 30);
-setupSliderControl('formulaValue', 'formulaSlider', 1, 1000);
+setupSliderControl('chiValue', 'chiSlider', 1, 30, true);
+setupSliderControl('lambdaValue', 'lambdaSlider', 1, 1000, true, true);
+setupSliderControl('diamondValue', 'diamondSlider', 0, 30, true);
+setupSliderControl('formulaValue', 'formulaSlider', 1, 1000, false);
 
-setupSliderControl('lbChiValue', 'lbChiSlider', 1, 1000);
-setupSliderControl('lbLambdaValue', 'lbLambdaSlider', 1, 1000, false, true);
-setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30);
-setupSliderControl('lbFormulaValue', 'lbFormulaSlider', 1, 1000);
+setupSliderControl('lbChiValue', 'lbChiSlider', 1, 30, true);
+setupSliderControl('lbLambdaValue', 'lbLambdaSlider', 1, 1000, true, true);
+setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30, true);
+setupSliderControl('lbFormulaValue', 'lbFormulaSlider', 1, 1000, false);

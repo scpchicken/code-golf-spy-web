@@ -9,15 +9,15 @@ Site Link: https://scpchicken.github.io/code-golf-spy-web/
 
 # Compare Golfers
 
-<img width="700" height="400" alt="compareusers" src="https://github.com/user-attachments/assets/61578e14-bec1-4f24-bbe9-552ba1409ca1" />
+<img width="700" height="400" alt="image" src="https://github.com/user-attachments/assets/2fd75150-c424-46b5-9f6c-84ffbe480902" />
 <img width="700" height="300" alt="image" src="https://github.com/user-attachments/assets/f12e9942-9972-4407-85f7-0e413cab4642" />
-<img width="324" height="489" alt="image" src="https://github.com/user-attachments/assets/32156e3a-9473-4d1f-86fe-b2b77819fc1f" />
-<img width="823" height="564" alt="image" src="https://github.com/user-attachments/assets/a46357d8-d6d2-44c5-ab8e-00eb8b7c55ed" />
+<img width="324" height="489" alt="image" src="https://github.com/user-attachments/assets/080c79ca-7ba9-430b-a969-5cefd3a95b23" />
+<img width="823" height="524" alt="image" src="https://github.com/user-attachments/assets/a46357d8-d6d2-44c5-ab8e-00eb8b7c55ed" />
 
 ---
 ---
 ---
 
 # Custom Leaderboard
-<img width="700" height="350" alt="image" src="https://github.com/user-attachments/assets/85633908-ac47-40c2-a739-a5213bf0b0b4" />
-<img width="500" height="400" alt="image" src="https://github.com/user-attachments/assets/5f8c12ef-5c0b-460c-b81a-264a460a19ff" />
+<img width="1000" height="500" alt="image" src="https://github.com/user-attachments/assets/c64d97a4-f8e7-4a90-8388-fa9d92a36609" />
+<img width="1000" height="800" alt="image" src="https://github.com/user-attachments/assets/5f8c12ef-5c0b-460c-b81a-264a460a19ff" />
