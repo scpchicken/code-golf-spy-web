@@ -1442,7 +1442,7 @@ function renderLeaderboard(results) {
         if (currentLbSortField === fieldName) {
           currentLbSortDir = currentLbSortDir === 'desc' ? 'asc' : 'desc';
         } else {
-          currentLbSortDir = fieldName;
+          currentLbSortField = fieldName;
           currentLbSortDir = defaultDir;
         }
         renderLeaderboard(lastLeaderboardResults);
