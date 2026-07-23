@@ -307,7 +307,7 @@ a.golf-link-clean:hover {
 }
 
 /* ==========================================
-   Tables
+   Tables & Alignment Rules
    ========================================== */
 table {
   width: 100%;
@@ -331,6 +331,77 @@ th {
 
 tr:hover td {
   background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* --- Main Table Alignment --- */
+.main-table th.lang,
+.main-table td.lang,
+#resultsTable th.lang,
+#resultsTable td.lang,
+.col-lang {
+  text-align: left;
+}
+
+.main-table th.score,
+.main-table td.score,
+#resultsTable th.score,
+#resultsTable td.score,
+.col-score,
+#lbResultsTable th:nth-child(4),
+#lbResultsTable td:nth-child(4),
+#lbResultsTable th:nth-child(5),
+#lbResultsTable td:nth-child(5) {
+  text-align: right;
+}
+
+.main-table td.medal-col,
+#resultsTable td.medal-col,
+.medal-col {
+  text-align: right;
+}
+
+.medal-group,
+.medal-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.medal-group .medal-count,
+.medal-group .medal-qty,
+.medal-container .medal-count,
+.medal-container .medal-qty {
+  display: inline-block;
+  min-width: 3ch; /* Reserved placeholder space so medals line up perfectly */
+  text-align: left;
+  margin-left: 4px;
+}
+
+/* --- Diff Table Alignment --- */
+.diff-table {
+  width: 100%;
+}
+
+.diff-table tr,
+.diff-table td,
+.diff-cell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.diff-table .medal-icon,
+.diff-cell .medal-icon,
+.diff-medal {
+  text-align: left;
+}
+
+.diff-table .number,
+.diff-cell .number,
+.diff-table .diff-num,
+.diff-cell .diff-num {
+  text-align: right;
+  margin-left: auto;
 }
 
 .diff-pos {
@@ -451,3 +522,105 @@ tr:hover td {
 .diff-clickable:hover {
   opacity: 0.8;
 }
+
+/* ==========================================
+   Score & Medal Alignment Rules
+   ========================================== */
+.score-cell-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.medal-badge-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  gap: 1px;
+  min-width: 22px;
+}
+
+.score-value-box {
+  min-width: 4.4ch;
+  text-align: right;
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================
+   Score & Medal Alignment Rules
+   ========================================== */
+.score-cell-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.medal-badge-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  gap: 2px;
+  min-width: 24px;
+}
+
+.score-value-box {
+  min-width: 5ch;
+  text-align: right;
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+.extra-medals-btn {
+  background: none;
+  border: none;
+  color: #4da6ff;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-decoration: underline;
+  line-height: 1;
+}
+
+.medal {
+  font-size: 1.1rem;
+  line-height: 1;
+  margin: 0;
+}
+
+/* ==========================================
+   Main Table Section Separators & Spacing
+   ========================================== */
+
+/* Vertical border separating Hole | User 1 | User 2 | Diff */
+.results-table th.col-border-left,
+.results-table td.col-border-left {
+  border-left: 2px solid var(--border, #334155) !important;
+}
+
+/* Tighten horizontal spacing inside User blocks */
+.results-table td.user-lang-cell {
+  padding-right: 4px !important;
+  white-space: nowrap;
+}
+
+.results-table td.user-score-cell {
+  padding-left: 4px !important;
+  white-space: nowrap;
+}
+
+/* Ensure medal and score sit closely aligned */
+.score-cell-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+

@@ -127,26 +127,54 @@ function compareMedalCandidates(a, b) {
   return (b.point || 0) - (a.point || 0);
 }
 
-function formatLangDisplay(hole, lang, medal, golferName, allMedals = []) {
+/**
+ * Format Main Table Language cell:
+ * - Language name left aligned
+ */
+function formatLangDisplay(hole, lang) {
   if (!lang || lang === "N/A" || lang === "-") return "-";
   const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(lang)}`;
-  const medalHtml = medal ? ` <span class="medal">${medal}</span>` : '';
-  
+  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>`;
+}
+
+/**
+ * Format Main Table Score cell:
+ * - Medal and bracket count stacked vertically to the left of the score
+ * - Fixed min-width score container ensures vertical medal alignment across 1,000 and 900
+ */
+function formatScoreDisplay(hole, lang, point, mode, medal, golferName, allMedals = []) {
+  if (!point || point <= 0 || !lang || lang === "N/A" || lang === "-") {
+    const valStr = (point || 0).toLocaleString();
+    return `
+      <div class="score-cell-container">
+        <div class="medal-badge-wrapper"></div>
+        <div class="score-value-box"><strong>${valStr}</strong></div>
+      </div>
+    `;
+  }
+
+  const scoreUrl = `https://code.golf/rankings/holes/${encodeURIComponent(hole)}/${encodeURIComponent(lang)}/${mode}`;
+  const scoreLink = `<a href="${scoreUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean"><strong>${point.toLocaleString()}</strong></a>`;
+
   let extraHtml = '';
   if (allMedals && allMedals.length > 1) {
     const medalsJson = escapeHtml(JSON.stringify(allMedals));
-    extraHtml = ` <button type="button" class="extra-medals-btn" data-hole="${escapeHtml(hole)}" data-golfer="${escapeHtml(golferName)}" data-medals="${medalsJson}" style="background: none; border: none; color: #4da6ff; cursor: pointer; padding: 0 2px; font-weight: bold; text-decoration: underline;">(${allMedals.length})</button>`;
+    extraHtml = `<button type="button" class="extra-medals-btn" data-hole="${escapeHtml(hole)}" data-golfer="${escapeHtml(golferName)}" data-medals="${medalsJson}">(${allMedals.length})</button>`;
   }
 
-  return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>${medalHtml}${extraHtml}`;
-}
+  const medalSpan = medal ? `<span class="medal">${medal}</span>` : '';
 
-function formatScoreDisplay(hole, lang, point, mode) {
-  if (!point || point <= 0 || !lang || lang === "N/A" || lang === "-") {
-    return `<strong>${(point || 0).toLocaleString()}</strong>`;
-  }
-  const scoreUrl = `https://code.golf/rankings/holes/${encodeURIComponent(hole)}/${encodeURIComponent(lang)}/${mode}`;
-  return `<a href="${scoreUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean"><strong>${point.toLocaleString()}</strong></a>`;
+  return `
+    <div class="score-cell-container">
+      <div class="medal-badge-wrapper">
+        ${medalSpan}
+        ${extraHtml}
+      </div>
+      <div class="score-value-box">
+        ${scoreLink}
+      </div>
+    </div>
+  `;
 }
 
 // --- Modals ---
@@ -223,7 +251,10 @@ function showExtraMedalsModal(hole, golfer, allMedals) {
   };
 }
 
-// Diff Breakdown Popup Modal
+/**
+ * Diff Breakdown Popup Modal
+ * Updated: Medal right next to score number, aligned to the right
+ */
 function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
   let modal = document.getElementById('diffBreakdownModal');
   if (!modal) {
@@ -245,7 +276,6 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
 
   const allLangNames = Array.from(new Set([...u1LangMap.keys(), ...u2LangMap.keys()]));
 
-  // Default sorting: User 2 (descending)
   let currentSortField = 'u2';
   let currentSortDir = 'desc';
 
@@ -291,14 +321,29 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       const u1Pts = item1 ? item1.point : 0;
       const u2Pts = item2 ? item2.point : 0;
 
-      const u1Str = item1 ? `${u1Pts.toLocaleString()}${item1.medal ? ' ' + item1.medal : ''}` : '-';
-      let u2Str = item2 ? `${u2Pts.toLocaleString()}${item2.medal ? ' ' + item2.medal : ''}` : '-';
+      const u1MedalStr = item1?.medal ? `<span class="medal">${item1.medal}</span>` : '';
+      const u1PtsStr = item1 ? u1Pts.toLocaleString() : '-';
+      const u1CellContent = `
+        <div style="display: flex; justify-content: flex-end; align-items: center; width: 100%; gap: 6px;">
+          <span style="display: inline-block; text-align: center;">${u1MedalStr}</span>
+          <span style="min-width: 5ch; text-align: right; display: inline-block; font-variant-numeric: tabular-nums;">${u1PtsStr}</span>
+        </div>
+      `;
 
-      // Highlight User 2 in yellow if higher than User 1's best score (Kept in diff modal)
+      const u2MedalStr = item2?.medal ? `<span class="medal">${item2.medal}</span>` : '';
+      let u2PtsStr = item2 ? u2Pts.toLocaleString() : '-';
+
       const isU2GreaterThanU1Best = item2 && u2Pts > u1Point;
       if (isU2GreaterThanU1Best) {
-        u2Str = `<span style="color: #facc15; font-weight: bold;">${u2Str}</span>`;
+        u2PtsStr = `<span style="color: #facc15; font-weight: bold;">${u2PtsStr}</span>`;
       }
+
+      const u2CellContent = `
+        <div style="display: flex; justify-content: flex-end; align-items: center; width: 100%; gap: 6px;">
+          <span style="display: inline-block; text-align: center;">${u2MedalStr}</span>
+          <span style="min-width: 5ch; text-align: right; display: inline-block; font-variant-numeric: tabular-nums;">${u2PtsStr}</span>
+        </div>
+      `;
 
       const diffVal = u1Pts - u2Pts;
       const diffSign = diffVal > 0 ? `+${diffVal.toLocaleString()}` : diffVal.toLocaleString();
@@ -317,8 +362,8 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       return `
         <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
           <td style="padding: 8px 12px;"><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(lang)}</a></td>
-          <td style="padding: 8px 12px; text-align: right;">${u1Str}</td>
-          <td style="padding: 8px 12px; text-align: right;">${u2Str}</td>
+          <td style="padding: 8px 12px; text-align: right;">${u1CellContent}</td>
+          <td style="padding: 8px 12px; text-align: right;">${u2CellContent}</td>
           <td style="padding: 8px 12px; text-align: right;" class="${diffClass}">${diffSign}</td>
           <td style="padding: 8px 12px; text-align: right;" class="${diffBestClass}">${diffBestStr}</td>
         </tr>
@@ -369,7 +414,6 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       </div>
     `;
 
-    // Rebind Modal Events
     const closeBtn = modal.querySelector('#closeDiffModalBtn');
     closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
 
@@ -487,7 +531,6 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   
   const activeSortEl = document.getElementById('activeSortSelect');
 
-  // Auto-select U2 - U1 option (diff-asc) from dropdown when 2 golfers are present
   if (u2Name) {
     if (activeSortEl) activeSortEl.value = 'diff-asc';
   } else if (activeSortEl && activeSortEl.value.startsWith('diff')) {
@@ -634,7 +677,6 @@ function processCompareData({
     }
   }
 
-  // Calculate Medals (💎 Diamonds, 🥇 Golds, 🥈 Silvers, 🥉 Bronzes)
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
     const parts = userLangKey.split("::");
@@ -671,7 +713,6 @@ function processCompareData({
     }
   }
 
-  // Count total Golds and Diamonds
   let u1Golds = 0, u1Diamonds = 0;
   let u2Golds = 0, u2Diamonds = 0;
 
@@ -844,6 +885,28 @@ function processCompareData({
   };
 }
 
+
+
+function getSortedCompareRows(rows, sortOrder, filterText = '') {
+  const sorted = [...rows].sort((a, b) => {
+    if (sortOrder === 'u1-desc') return b.u1Point - a.u1Point || a.hole.localeCompare(b.hole);
+    if (sortOrder === 'u2-desc') return b.u2Point - a.u2Point || a.hole.localeCompare(b.hole);
+    if (sortOrder === 'diff-desc') return b.diff - a.diff || a.hole.localeCompare(b.hole);
+    if (sortOrder === 'diff-asc') return a.diff - b.diff || a.hole.localeCompare(b.hole);
+    if (sortOrder === 'alpha-asc') return a.hole.localeCompare(b.hole);
+    if (sortOrder === 'alpha-desc') return b.hole.localeCompare(a.hole);
+    return 0;
+  });
+
+  if (filterText) {
+    return sorted.filter(r => r.hole.toLowerCase().includes(filterText));
+  }
+  return sorted;
+}
+
+/**
+ * Render Comparison Headers and Card Layout with vertical dividers
+ */
 function renderCompareResults(data, sortOrder) {
   const { u1Name, u2Name, u1TotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
   const statsContainer = document.getElementById('statsContainer');
@@ -875,11 +938,11 @@ function renderCompareResults(data, sortOrder) {
     tableHead.innerHTML = `
       <tr>
         <th>Hole</th>
-        <th>${u1Link} (Lang)</th>
-        <th>${u1Link} (Score)</th>
-        <th>${u2Link} (Lang)</th>
-        <th>${u2Link} (Score)</th>
-        <th>Diff</th>
+        <th class="col-border-left">${u1Link} (Lang)</th>
+        <th style="text-align: right;">Score</th>
+        <th class="col-border-left">${u2Link} (Lang)</th>
+        <th style="text-align: right;">Score</th>
+        <th class="col-border-left" style="text-align: right;">Diff</th>
       </tr>
     `;
   } else {
@@ -901,8 +964,8 @@ function renderCompareResults(data, sortOrder) {
     tableHead.innerHTML = `
       <tr>
         <th>Hole</th>
-        <th>Language</th>
-        <th>Points</th>
+        <th class="col-border-left">Language</th>
+        <th style="text-align: right;">Points</th>
       </tr>
     `;
   }
@@ -911,23 +974,9 @@ function renderCompareResults(data, sortOrder) {
   document.getElementById('resultsCard')?.classList.remove('hidden');
 }
 
-function getSortedCompareRows(rows, sortOrder, filterText = '') {
-  const sorted = [...rows].sort((a, b) => {
-    if (sortOrder === 'u1-desc') return b.u1Point - a.u1Point || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'u2-desc') return b.u2Point - a.u2Point || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'diff-desc') return b.diff - a.diff || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'diff-asc') return a.diff - b.diff || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'alpha-asc') return a.hole.localeCompare(b.hole);
-    if (sortOrder === 'alpha-desc') return b.hole.localeCompare(a.hole);
-    return 0;
-  });
-
-  if (filterText) {
-    return sorted.filter(r => r.hole.toLowerCase().includes(filterText));
-  }
-  return sorted;
-}
-
+/**
+ * Render Main Table Data Rows with class hooks for spacing & borders
+ */
 function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Name, u2Name) {
   const resultsBody = document.getElementById('resultsBody');
   const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
@@ -939,12 +988,12 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Nam
     const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
     const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a>`;
 
-    const u1LangDisplay = formatLangDisplay(r.hole, r.u1Lang, r.u1Medal, u1Name, r.u1AllMedals);
-    const u1ScoreDisplay = formatScoreDisplay(r.hole, r.u1Lang, r.u1Point, scoringMode);
+    const u1LangDisplay = formatLangDisplay(r.hole, r.u1Lang);
+    const u1ScoreDisplay = formatScoreDisplay(r.hole, r.u1Lang, r.u1Point, scoringMode, r.u1Medal, u1Name, r.u1AllMedals);
 
     if (hasUser2) {
-      const u2LangDisplay = formatLangDisplay(r.hole, r.u2Lang, r.u2Medal, u2Name, r.u2AllMedals);
-      const u2ScoreDisplay = formatScoreDisplay(r.hole, r.u2Lang, r.u2Point, scoringMode);
+      const u2LangDisplay = formatLangDisplay(r.hole, r.u2Lang);
+      const u2ScoreDisplay = formatScoreDisplay(r.hole, r.u2Lang, r.u2Point, scoringMode, r.u2Medal, u2Name, r.u2AllMedals);
 
       const diffClass = r.diff > 0 ? 'diff-pos' : r.diff < 0 ? 'diff-neg' : 'diff-zero';
       const diffText = r.diff > 0 ? `+${r.diff.toLocaleString()}` : r.diff.toLocaleString();
@@ -954,11 +1003,11 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Nam
 
       tr.innerHTML = `
         <td>${holeDisplay}</td>
-        <td>${u1LangDisplay}</td>
-        <td>${u1ScoreDisplay}</td>
-        <td>${u2LangDisplay}</td>
-        <td>${u2ScoreDisplay}</td>
-        <td>
+        <td class="col-border-left user-lang-cell">${u1LangDisplay}</td>
+        <td class="user-score-cell" style="text-align: right;">${u1ScoreDisplay}</td>
+        <td class="col-border-left user-lang-cell">${u2LangDisplay}</td>
+        <td class="user-score-cell" style="text-align: right;">${u2ScoreDisplay}</td>
+        <td class="col-border-left" style="text-align: right;">
           <span class="diff-clickable ${diffClass}" 
             data-hole="${escapeHtml(r.hole)}"
             data-u1-point="${r.u1Point}"
@@ -974,8 +1023,8 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Nam
     } else {
       tr.innerHTML = `
         <td>${holeDisplay}</td>
-        <td>${u1LangDisplay}</td>
-        <td>${u1ScoreDisplay}</td>
+        <td class="col-border-left user-lang-cell">${u1LangDisplay}</td>
+        <td class="user-score-cell" style="text-align: right;">${u1ScoreDisplay}</td>
       `;
     }
     resultsBody.appendChild(tr);
@@ -1352,8 +1401,8 @@ function renderLeaderboard(results, sortOrder = 'points-desc') {
         <strong>${getGolferLink(row.name)}</strong>
       </td>
       <td>${row.holes.toLocaleString()}</td>
-      <td><strong>${row.points.toLocaleString()}</strong></td>
-      <td>${row.bytes.toLocaleString()}</td>
+      <td style="text-align: right;"><strong>${row.points.toLocaleString()}</strong></td>
+      <td style="text-align: right;">${row.bytes.toLocaleString()}</td>
       <td style="text-align: right;" class="${diffClass}"><strong>${changeSign}</strong></td>
     `;
     tbody.appendChild(tr);
