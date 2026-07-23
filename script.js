@@ -286,7 +286,7 @@ function showExtraMedalsModal(hole, golfer, allMedals) {
     const ptDisplay = m.point ? ` (${m.point.toLocaleString()} pt)` : '';
     return `
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-        <a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(m.lang)}</a>
+        <a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4ade80;">${escapeHtml(m.lang)}</a>
         <span style="font-size: 1.1em; margin-left: 12px;">${m.medal}${ptDisplay}</span>
       </div>
     `;
@@ -295,7 +295,7 @@ function showExtraMedalsModal(hole, golfer, allMedals) {
   modal.innerHTML = `
     <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 20px 24px; border-radius: 8px; min-width: 280px; max-width: 420px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 8px;">
-        <strong style="font-size: 1.1em; color: var(--accent, #38bdf8);">${escapeHtml(hole)} (${escapeHtml(golfer)})</strong>
+        <strong style="font-size: 1.1em; color: var(--accent, #22c55e);">${escapeHtml(hole)} (${escapeHtml(golfer)})</strong>
         <button id="closeExtraMedalsBtn" style="background: none; border: none; color: #aaa; font-size: 1.4em; cursor: pointer; line-height: 1;">&times;</button>
       </div>
       <div style="max-height: 300px; overflow-y: auto;">
@@ -424,7 +424,7 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 20px 24px; border-radius: 8px; min-width: 320px; max-width: 680px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px;">
           <div>
-            <h3 style="margin: 0; color: var(--accent, #38bdf8); font-size: 1.2em;">${escapeHtml(hole)}</h3>
+            <h3 style="margin: 0; color: var(--accent, #22c55e); font-size: 1.2em;">${escapeHtml(hole)}</h3>
             <div style="font-size: 0.85em; color: var(--text-dim, #94a3b8); margin-top: 4px;">
               ${escapeHtml(u1Name)} Best: <strong>${u1Point.toLocaleString()} pt</strong> &nbsp;|&nbsp;
               ${escapeHtml(u2Name)} Best: <strong>${u2Point.toLocaleString()} pt</strong>
