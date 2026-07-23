@@ -440,3 +440,14 @@ tr:hover td {
 .clickable-setting * {
   cursor: pointer; /* Ensures inner span tags keep the pointer cursor */
 }
+
+.diff-clickable {
+  cursor: pointer;
+  text-decoration: none !important;
+  text-underline-offset: 3px;
+  transition: opacity 0.2s;
+}
+
+.diff-clickable:hover {
+  opacity: 0.8;
+}
