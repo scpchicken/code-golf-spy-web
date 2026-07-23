@@ -1,13 +1,10 @@
 /**
  * Code Golf Comparison & Custom Leaderboard Script
- * (Uses IndexedDB for persistent storage + Diamond Bonus Support)
+ * (Diamond Bonus Support)
  */
 
 // --- Global Constants & State ---
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
-
-const DB_NAME = 'CodeGolfCacheDB';
-const DB_STORE = 'solutionsStore';
 
 let lastCompareResults = null;
 let lastLeaderboardResults = [];
@@ -19,43 +16,6 @@ let currentCompareSortDir = 'desc';
 // Leaderboard Sort State
 let currentLbSortField = 'points';
 let currentLbSortDir = 'desc';
-
-// --- IndexedDB Helpers ---
-function openCacheDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(DB_STORE)) {
-        db.createObjectStore(DB_STORE);
-      }
-    };
-    request.onsuccess = (e) => resolve(e.target.result);
-    request.onerror = (e) => reject(e.target.error);
-  });
-}
-
-async function saveSolutionsToIDB(data) {
-  const db = await openCacheDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    const store = tx.objectStore(DB_STORE);
-    const req = store.put(data, 'solutions');
-    req.onsuccess = () => resolve();
-    req.onerror = (e) => reject(e.target.error);
-  });
-}
-
-async function getSolutionsFromIDB() {
-  const db = await openCacheDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readonly');
-    const store = tx.objectStore(DB_STORE);
-    const req = store.get('solutions');
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = (e) => reject(e.target.error);
-  });
-}
 
 // --- Unicode & Visual Alignment Helpers ---
 function getVisualWidth(str) {
@@ -141,24 +101,9 @@ function readJsonFile(file) {
 
 async function getSubmissionsData(fileInput) {
   const file = fileInput?.files?.[0];
-
   if (file) {
-    const data = await readJsonFile(file);
-    try {
-      await saveSolutionsToIDB(data);
-    } catch (e) {
-      console.warn('Could not cache solutions.json to IndexedDB.', e);
-    }
-    return data;
+    return await readJsonFile(file);
   }
-
-  try {
-    const cached = await getSolutionsFromIDB();
-    if (cached) return cached;
-  } catch (err) {
-    console.error('Error fetching from IndexedDB:', err);
-  }
-
   return null;
 }
 
