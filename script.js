@@ -565,6 +565,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   const scoringMode = getScoringMode();
   const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard';
   const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || 1);
+  const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || 0);
   const langFilter = (document.getElementById('langFilterInput')?.value || '').trim().toLowerCase();
 
   if (u2Name) {
@@ -609,6 +610,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
       scoringMode,
       formulaType,
       chiExponent,
+      diamondBonus,
       langFilter,
       holesJson: holesData,
       langsJson: langsData,
@@ -631,7 +633,8 @@ function processCompareData({
   u2Name, 
   scoringMode, 
   formulaType = 'standard', 
-  chiExponent = 1, 
+  chiExponent = 1,
+  diamondBonus = 0,
   langFilter, 
   holesJson, 
   langsJson, 
@@ -870,25 +873,59 @@ function processCompareData({
     });
   }
 
-  const u1TotalScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
-  const u2TotalScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
+  const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
+  const u2BaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
+
+  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, 1));
+  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, 1)) : 0;
+
+  const u1TotalScore = u1BaseScore + Math.round(u1Diamonds * diamondBonus);
+  const u1RawTotalScore = u1RawBaseScore + Math.round(u1Diamonds * diamondBonus);
+  const u2TotalScore = hasUser2 ? (u2BaseScore + Math.round(u2Diamonds * diamondBonus)) : 0;
+  const u2RawTotalScore = hasUser2 ? (u2RawBaseScore + Math.round(u2Diamonds * diamondBonus)) : 0;
 
   return {
     rows,
     u1Name,
     u1TotalScore,
+    u1RawTotalScore,
     u1SolvedCount,
     u1Golds,
     u1Diamonds,
     u2Name,
     u2TotalScore,
+    u2RawTotalScore,
     u2SolvedCount,
     u2Golds,
     u2Diamonds,
     hasUser2,
     scoringMode,
-    chiExponent
+    chiExponent,
+    diamondBonus
   };
+}
+
+function updateCompareScores() {
+  if (!lastCompareResults) return;
+  const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || '0');
+  const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || '1');
+
+  const totalHoles = lastCompareResults.rows.length;
+  const u1Scores = lastCompareResults.rows.map(r => r.u1Point);
+  const u2Scores = lastCompareResults.rows.map(r => r.u2Point);
+
+  const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, chiExponent));
+  const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
+
+  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, 1));
+  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
+
+  lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
+  lastCompareResults.u1RawTotalScore = u1RawBaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
+  if (lastCompareResults.hasUser2) {
+    lastCompareResults.u2TotalScore = u2BaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
+    lastCompareResults.u2RawTotalScore = u2RawBaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
+  }
 }
 
 function getSortedCompareRows(rows, sortField, sortDir, filterText = '') {
@@ -919,7 +956,7 @@ function getSortedCompareRows(rows, sortField, sortDir, filterText = '') {
 }
 
 function renderCompareResults(data) {
-  const { u1Name, u2Name, u1TotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
+  const { u1Name, u2Name, u1TotalScore, u1RawTotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2RawTotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
   const statsContainer = document.getElementById('statsContainer');
   const tableHead = document.getElementById('tableHead');
 
@@ -935,11 +972,11 @@ function renderCompareResults(data) {
 
     statsContainer.innerHTML = `
       <div class="stat-box">
-        <div class="val">${u1TotalScore.toLocaleString()}</div>
+        <div class="val">${u1TotalScore.toLocaleString()} <span style="font-size: 0.6em; opacity: 0.7; font-weight: normal; margin-left: 4px;">(${u1RawTotalScore.toLocaleString()})</span></div>
         <div class="lbl">${u1Link} (${u1SolvedCount} solved • 🥇 ${u1Golds.toLocaleString()} / 💎 ${u1Diamonds.toLocaleString()})</div>
       </div>
       <div class="stat-box">
-        <div class="val">${u2TotalScore.toLocaleString()}</div>
+        <div class="val">${u2TotalScore.toLocaleString()} <span style="font-size: 0.6em; opacity: 0.7; font-weight: normal; margin-left: 4px;">(${u2RawTotalScore.toLocaleString()})</span></div>
         <div class="lbl">${u2Link} (${u2SolvedCount} solved • 🥇 ${u2Golds.toLocaleString()} / 💎 ${u2Diamonds.toLocaleString()})</div>
       </div>
       <div class="stat-box">
@@ -968,7 +1005,7 @@ function renderCompareResults(data) {
   } else {
     statsContainer.innerHTML = `
       <div class="stat-box">
-        <div class="val">${u1TotalScore.toLocaleString()}</div>
+        <div class="val">${u1TotalScore.toLocaleString()} <span style="font-size: 0.6em; opacity: 0.7; font-weight: normal; margin-left: 4px;">(${u1RawTotalScore.toLocaleString()})</span></div>
         <div class="lbl">${u1Link} Total Score (${modeLabel})</div>
       </div>
       <div class="stat-box">
@@ -1383,18 +1420,16 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
 }
 
 /**
- * Recalculates effective points (base points + optional diamond bonus contribution)
+ * Recalculates effective points (base points + diamond bonus contribution)
  * and updates standard ranks & rank changes for all golfers.
  */
 function updateLeaderboardScoresAndRanks() {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) return;
 
-  const isDiamondBonusActive = document.getElementById('lbDiamondToggle')?.checked ?? false;
   const diamondBonusVal = parseFloat(document.getElementById('lbDiamondValue')?.textContent || '0');
 
   lastLeaderboardResults.forEach(row => {
-    const bonusCoeff = isDiamondBonusActive ? diamondBonusVal : 0;
-    row.diamondContrib = Math.round(row.diamonds * bonusCoeff);
+    row.diamondContrib = Math.round(row.diamonds * diamondBonusVal);
     row.points = Math.round(row.basePoints + row.diamondContrib);
   });
 
@@ -1462,7 +1497,7 @@ function renderLeaderboard(results) {
         if (currentLbSortField === fieldName) {
           currentLbSortDir = currentLbSortDir === 'desc' ? 'asc' : 'desc';
         } else {
-          currentLbSortField = fieldName;
+          currentLbSortDir = fieldName;
           currentLbSortDir = defaultDir;
         }
         renderLeaderboard(lastLeaderboardResults);
@@ -1571,6 +1606,10 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
       updateLeaderboardScoresAndRanks();
       renderLeaderboard(lastLeaderboardResults);
     }
+    if (lastCompareResults) {
+      updateCompareScores();
+      renderCompareResults(lastCompareResults);
+    }
   };
 
   sliderEl.addEventListener('input', (e) => {
@@ -1598,15 +1637,8 @@ function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000) {
   });
 }
 
-// Dynamic Listener for Diamond Bonus Toggle Switch
-document.getElementById('lbDiamondToggle')?.addEventListener('change', () => {
-  if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
-    updateLeaderboardScoresAndRanks();
-    renderLeaderboard(lastLeaderboardResults);
-  }
-});
-
 // Initialize Chi and Diamond controls
 setupSliderControl('chiValue', 'chiSlider', 1, 1000);
+setupSliderControl('diamondValue', 'diamondSlider', 0, 30);
 setupSliderControl('lbChiValue', 'lbChiSlider', 1, 1000);
 setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30);

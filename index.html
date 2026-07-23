@@ -87,7 +87,7 @@
 
           <div class="form-group">
             <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
-              Holes Exponent (χ):&nbsp;<span id="chiValue">1</span>
+              Hole Exponent (χ):&nbsp;<span id="chiValue">1</span>
             </label>
             <input 
               type="range" 
@@ -97,6 +97,22 @@
               step="0.5" 
               value="1"
               title="1 = Standard Average, higher values favor quality over quantity"
+            >
+          </div>
+
+          <!-- Diamond Bonus Slider Option for Comparison Page -->
+          <div class="form-group">
+            <label class="clickable-setting" title="Click to manually enter a value (0–30)">
+              Diamond Bonus:&nbsp;<span id="diamondValue">0</span>&nbsp;pts/💎
+            </label>
+            <input 
+              type="range" 
+              id="diamondSlider" 
+              min="0" 
+              max="30" 
+              step="1" 
+              value="0"
+              title="0 = No Bonus, bonus points awarded per diamond"
             >
           </div>
 
@@ -192,7 +208,7 @@
           <!-- Chi Exponent Slider Option -->
           <div class="form-group">
             <label class="clickable-setting" title="Click to manually enter a value (1–1000)">
-              Holes Exponent (χ):&nbsp;<span id="lbChiValue">1</span>
+              Hole Exponent (χ):&nbsp;<span id="lbChiValue">1</span>
             </label>
             <input 
               type="range" 
@@ -219,15 +235,6 @@
               value="0"
               title="0 = No Bonus, bonus points awarded per diamond"
             >
-          </div>
-
-          <!-- Enable Diamond Bonus Checkbox -->
-          <div class="form-group">
-            <label>&nbsp;</label>
-            <div class="checkbox-wrapper">
-              <input type="checkbox" id="lbDiamondToggle">
-              <label for="lbDiamondToggle" class="checkbox-label">Enable Diamond Bonus</label>
-            </div>
           </div>
         </div>
 
