@@ -5,8 +5,21 @@
 // --- Global Constants & State ---
 const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardouin, sean-niemann, rucin93, emplv, edsrzf, scpchicken, blaztoma, MeWhenI, Seek64, kg583, emgordon154, stefangimmillaro, lyphyser, saito-ta, SirBogman, snoozingnewt, lynn, nwellnhof, CaedenHarper, KasperKivimaeki, vang1ong7ang, 5cw, canissimia, sisyphus-gpt, duckyluuk, GrayJoKing, hallvabo, Natanaelel, GolfingSuccess, bitsandbeyond, bizy-coder, CornerMercury, ryyyn, AlephSquirrel, AdrienHache, antimon2, DialFrost, plcc0, jared-hughes, JayXon, Shanethegamer, namelessiw, bricknellj, sisyphus-ppcg, KatieLG, albanian-laundromat, JOrE20, primo-ppcg, anter69, rkg-huwdu, m-tkach, oaiqjuy, btnlq, ndren, annaproxy, aksyristos, inventshah, Yax42, Flekay, dokutan, 2bular, IanUtley, acotis, lukegustafson, vlpx, RainVniaR, Kacarott, Lydxn, CLOStrophobic, StefanHabel, error256, lifthrasiir, BREMAUCY, targrik, commandz0, voytxt, FortuiteMan, madex, retrohun, xsot, tomtheisen, HPWiz, qpwoeirut, UnderKoen, prestosilver, helbling, ahmetdemirag, Yewzir, LostSyntax21, dmrichwa, prplz, iczelia, CatsAreFluffy, InigoK, kumavale, ZakkkkAttackkkk";
 
+// Cache Keys for localStorage (ONLY Submissions/Solutions)
+const CACHE_KEYS = {
+  SUBMISSIONS: 'cg_solutions_cache'
+};
+
 let lastCompareResults = null;
 let lastLeaderboardResults = [];
+
+// Compare Sort State
+let currentCompareSortField = 'u1';
+let currentCompareSortDir = 'desc';
+
+// Leaderboard Sort State
+let currentLbSortField = 'points';
+let currentLbSortDir = 'desc';
 
 // --- Unicode & Visual Alignment Helpers ---
 function getVisualWidth(str) {
@@ -74,6 +87,7 @@ function getScoringMode() {
   return el && el.value ? el.value.toLowerCase() : 'bytes';
 }
 
+// --- LocalStorage & File Helpers ---
 function readJsonFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -89,10 +103,47 @@ function readJsonFile(file) {
   });
 }
 
+/**
+ * Retrieves Submissions JSON (solutions.json).
+ * Priority: 1. Newly uploaded file -> 2. LocalStorage Cache
+ */
+async function getSubmissionsData(fileInput) {
+  const file = fileInput?.files?.[0];
+
+  if (file) {
+    const data = await readJsonFile(file);
+    try {
+      localStorage.setItem(CACHE_KEYS.SUBMISSIONS, JSON.stringify(data));
+      console.log('Saved uploaded solutions.json to localStorage.');
+    } catch (e) {
+      console.warn('Could not cache solutions.json to localStorage (likely exceeds ~5MB limit).', e);
+    }
+    return data;
+  }
+
+  // Check localStorage if no new file uploaded
+  const cached = localStorage.getItem(CACHE_KEYS.SUBMISSIONS);
+  if (cached) {
+    try {
+      console.log('Loaded solutions.json from localStorage cache.');
+      return JSON.parse(cached);
+    } catch (err) {
+      console.error('Corrupted solutions cache. Removing item.', err);
+      localStorage.removeItem(CACHE_KEYS.SUBMISSIONS);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Retrieves auxiliary JSON files (holes/langs) directly without caching.
+ */
 async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   if (fileInput && fileInput.files && fileInput.files[0]) {
     return await readJsonFile(fileInput.files[0]);
   }
+
   try {
     const resp = await fetch(fetchUrl);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -101,6 +152,11 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
     console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}. Falling back to default behavior.`);
     return null;
   }
+}
+
+function clearSolutionsCache() {
+  localStorage.removeItem(CACHE_KEYS.SUBMISSIONS);
+  console.log('Cleared cached solutions from localStorage.');
 }
 
 function downloadMarkdownFile(filename, text) {
@@ -127,21 +183,12 @@ function compareMedalCandidates(a, b) {
   return (b.point || 0) - (a.point || 0);
 }
 
-/**
- * Format Main Table Language cell:
- * - Language name left aligned
- */
 function formatLangDisplay(hole, lang) {
   if (!lang || lang === "N/A" || lang === "-") return "-";
   const langUrl = `https://code.golf/${encodeURIComponent(hole)}#${encodeURIComponent(lang)}`;
   return `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean">${escapeHtml(lang)}</a>`;
 }
 
-/**
- * Format Main Table Score cell:
- * - Medal and bracket count stacked vertically to the left of the score
- * - Fixed min-width score container ensures vertical medal alignment across 1,000 and 900
- */
 function formatScoreDisplay(hole, lang, point, mode, medal, golferName, allMedals = []) {
   if (!point || point <= 0 || !lang || lang === "N/A" || lang === "-") {
     const valStr = (point || 0).toLocaleString();
@@ -178,7 +225,6 @@ function formatScoreDisplay(hole, lang, point, mode, medal, golferName, allMedal
 }
 
 // --- Modals ---
-// Solutions Modal
 const solutionsModal = document.getElementById('solutionsModal');
 
 function handleSolutionsDownload() {
@@ -242,19 +288,11 @@ function showExtraMedalsModal(hole, golfer, allMedals) {
   `;
 
   modal.classList.remove('hidden');
-
-  const closeBtn = modal.querySelector('#closeExtraMedalsBtn');
-  closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
-
-  modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.add('hidden');
-  };
+  modal.querySelector('#closeExtraMedalsBtn')?.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
 }
 
-/**
- * Diff Breakdown Popup Modal
- * Updated: Medal right next to score number, aligned to the right
- */
+// Diff Breakdown Popup Modal
 function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
   let modal = document.getElementById('diffBreakdownModal');
   if (!modal) {
@@ -273,7 +311,6 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
 
   const u1LangMap = new Map(u1Langs.map(item => [item.lang, item]));
   const u2LangMap = new Map(u2Langs.map(item => [item.lang, item]));
-
   const allLangNames = Array.from(new Set([...u1LangMap.keys(), ...u2LangMap.keys()]));
 
   let currentSortField = 'u2';
@@ -295,18 +332,11 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       const diffB = u1PtsB - u2PtsB;
       const diffBestB = item1B ? (u1PtsB - u2Point) : (u2Point > 0 ? -u2Point : 0);
 
-      let valA = 0;
-      let valB = 0;
-
-      if (currentSortField === 'u1') {
-        valA = u1PtsA; valB = u1PtsB;
-      } else if (currentSortField === 'u2') {
-        valA = u2PtsA; valB = u2PtsB;
-      } else if (currentSortField === 'diff') {
-        valA = diffA; valB = diffB;
-      } else if (currentSortField === 'diffBest') {
-        valA = diffBestA; valB = diffBestB;
-      }
+      let valA = 0, valB = 0;
+      if (currentSortField === 'u1') { valA = u1PtsA; valB = u1PtsB; }
+      else if (currentSortField === 'u2') { valA = u2PtsA; valB = u2PtsB; }
+      else if (currentSortField === 'diff') { valA = diffA; valB = diffB; }
+      else if (currentSortField === 'diffBest') { valA = diffBestA; valB = diffBestB; }
 
       if (valA !== valB) {
         return currentSortDir === 'desc' ? valB - valA : valA - valB;
@@ -333,8 +363,7 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       const u2MedalStr = item2?.medal ? `<span class="medal">${item2.medal}</span>` : '';
       let u2PtsStr = item2 ? u2Pts.toLocaleString() : '-';
 
-      const isU2GreaterThanU1Best = item2 && u2Pts > u1Point;
-      if (isU2GreaterThanU1Best) {
+      if (item2 && u2Pts > u1Point) {
         u2PtsStr = `<span style="color: #facc15; font-weight: bold;">${u2PtsStr}</span>`;
       }
 
@@ -392,16 +421,16 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
             <thead>
               <tr style="border-bottom: 1px solid var(--border, #334155); color: var(--text-dim, #94a3b8);">
                 <th style="padding: 6px 12px; text-align: left;">Language</th>
-                <th id="thSortU1" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'u1' ? '#38bdf8' : 'inherit'};" title="Click to sort by ${escapeHtml(u1Name)} score">
+                <th id="thSortU1" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'u1' ? '#38bdf8' : 'inherit'};">
                   ${escapeHtml(u1Name)}${u1Arrow}
                 </th>
-                <th id="thSortU2" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'u2' ? '#38bdf8' : 'inherit'};" title="Click to sort by ${escapeHtml(u2Name)} score">
+                <th id="thSortU2" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'u2' ? '#38bdf8' : 'inherit'};">
                   ${escapeHtml(u2Name)}${u2Arrow}
                 </th>
-                <th id="thSortDiff" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'diff' ? '#38bdf8' : 'inherit'};" title="Click to sort by Diff">
+                <th id="thSortDiff" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'diff' ? '#38bdf8' : 'inherit'};">
                   Diff${diffArrow}
                 </th>
-                <th id="thSortDiffBest" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'diffBest' ? '#38bdf8' : 'inherit'};" title="Click to sort by Diff from Best">
+                <th id="thSortDiffBest" style="padding: 6px 12px; text-align: right; cursor: pointer; user-select: none; color: ${currentSortField === 'diffBest' ? '#38bdf8' : 'inherit'};">
                   Diff from Best${diffBestArrow}
                 </th>
               </tr>
@@ -414,8 +443,7 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
       </div>
     `;
 
-    const closeBtn = modal.querySelector('#closeDiffModalBtn');
-    closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+    modal.querySelector('#closeDiffModalBtn')?.addEventListener('click', () => modal.classList.add('hidden'));
 
     const bindHeaderSort = (id, fieldName) => {
       const el = modal.querySelector(id);
@@ -438,10 +466,7 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
 
   renderModalContent();
   modal.classList.remove('hidden');
-
-  modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.add('hidden');
-  };
+  modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
 }
 
 // --- Event Delegation for Results Table ---
@@ -521,32 +546,25 @@ document.getElementById('dlLangsBtn')?.addEventListener('click', () => window.op
 // PAGE 1: Golfer Comparison Logic
 // ==========================================
 document.getElementById('goBtn')?.addEventListener('click', async () => {
-  const subFileInput = document.getElementById('submissionsFile')?.files?.[0];
   const u1Name = document.getElementById('user1Input')?.value.trim() || '';
   const u2Name = document.getElementById('user2Input')?.value.trim() || '';
   const scoringMode = getScoringMode();
   const formulaType = document.getElementById('compareScoringFormulaSelect')?.value || 'standard';
   const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || 1);
   const langFilter = (document.getElementById('langFilterInput')?.value || '').trim().toLowerCase();
-  
-  const activeSortEl = document.getElementById('activeSortSelect');
 
   if (u2Name) {
-    if (activeSortEl) activeSortEl.value = 'diff-asc';
-  } else if (activeSortEl && activeSortEl.value.startsWith('diff')) {
-    activeSortEl.value = 'u1-desc';
+    currentCompareSortField = 'diff';
+    currentCompareSortDir = 'asc';
+  } else {
+    currentCompareSortField = 'u1';
+    currentCompareSortDir = 'desc';
   }
 
-  const sortOrder = activeSortEl ? activeSortEl.value : (u2Name ? 'diff-asc' : 'u1-desc');
-
+  const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
   const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
-
-  if (!subFileInput) {
-    handleSolutionsDownload();
-    return;
-  }
 
   if (!u1Name) {
     alert("Please specify Username 1.");
@@ -557,8 +575,16 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   await new Promise(r => setTimeout(r, 50));
 
   try {
-    const [submissionsData, holesData, langsData] = await Promise.all([
-      readJsonFile(subFileInput),
+    const submissionsData = await getSubmissionsData(subFileInput);
+    
+    // Fallback if no submissions JSON found anywhere
+    if (!submissionsData) {
+      hideLoading();
+      handleSolutionsDownload();
+      return;
+    }
+
+    const [holesData, langsData] = await Promise.all([
       getOrFetchJson(holesFileInput, 'https://code.golf/api/holes', 'holes.json'),
       getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
     ]);
@@ -576,10 +602,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
       includeExperimental
     });
 
-    if (activeSortEl) {
-      activeSortEl.value = sortOrder;
-    }
-    renderCompareResults(lastCompareResults, sortOrder);
+    renderCompareResults(lastCompareResults);
     document.getElementById('dlResultsBtn')?.classList.remove('hidden');
     document.getElementById('dlResultsTxtBtn')?.classList.remove('hidden');
   } catch (err) {
@@ -605,22 +628,13 @@ function processCompareData({
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
   const hasUser2 = Boolean(u2Lower);
 
-  let offset1 = 2.0;
-  let offset2 = 3.0;
+  let offset1 = 2.0, offset2 = 3.0;
   let isFlat1000 = false;
 
-  if (formulaType === 'alt') {
-    offset1 = 8.0;
-    offset2 = 9.0;
-  } else if (formulaType === 'min950') {
-    offset1 = 18.0;
-    offset2 = 19.0;
-  } else if (formulaType === 'min999') {
-    offset1 = 998.0;
-    offset2 = 999.0;
-  } else if (formulaType === 'min1000') {
-    isFlat1000 = true;
-  }
+  if (formulaType === 'alt') { offset1 = 8.0; offset2 = 9.0; }
+  else if (formulaType === 'min950') { offset1 = 18.0; offset2 = 19.0; }
+  else if (formulaType === 'min999') { offset1 = 998.0; offset2 = 999.0; }
+  else if (formulaType === 'min1000') { isFlat1000 = true; }
 
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
@@ -701,13 +715,9 @@ function processCompareData({
       const place = strictlyFewer + 1;
 
       let medal = "";
-      if (place === 1) {
-        medal = (tiedForFirst === 1) ? "💎" : "🥇";
-      } else if (place === 2) {
-        medal = "🥈";
-      } else if (place === 3) {
-        medal = "🥉";
-      }
+      if (place === 1) medal = (tiedForFirst === 1) ? "💎" : "🥇";
+      else if (place === 2) medal = "🥈";
+      else if (place === 3) medal = "🥉";
 
       medalsMap.set(`${key}::${current.login}`, medal);
     }
@@ -722,19 +732,11 @@ function processCompareData({
     const medal = medalsMap.get(userLangKey) || "";
 
     if (loginLower === u1Lower) {
-      if (medal === "💎") {
-        u1Diamonds++;
-        u1Golds++;
-      } else if (medal === "🥇") {
-        u1Golds++;
-      }
+      if (medal === "💎") { u1Diamonds++; u1Golds++; }
+      else if (medal === "🥇") u1Golds++;
     } else if (hasUser2 && loginLower === u2Lower) {
-      if (medal === "💎") {
-        u2Diamonds++;
-        u2Golds++;
-      } else if (medal === "🥇") {
-        u2Golds++;
-      }
+      if (medal === "💎") { u2Diamonds++; u2Golds++; }
+      else if (medal === "🥇") u2Golds++;
     }
   }
 
@@ -774,7 +776,6 @@ function processCompareData({
 
     candidates.sort((a, b) => {
       if (a.point !== b.point) return a.point - b.point;
-      
       const medalRank = { '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
       const rankA = medalRank[a.medal] || 5;
       const rankB = medalRank[b.medal] || 5;
@@ -788,22 +789,14 @@ function processCompareData({
 
     if (roundedPoint === 0) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-", allLangScores: [] };
 
-    const allMedals = candidates
-      .filter(c => c.medal !== "")
-      .sort(compareMedalCandidates);
+    const allMedals = candidates.filter(c => c.medal !== "").sort(compareMedalCandidates);
 
     let dCount = 0, gCount = 0, sCount = 0, bCount = 0;
     allMedals.forEach(m => {
-      if (m.medal === '💎') {
-        dCount++;
-        gCount++;
-      } else if (m.medal === '🥇') {
-        gCount++;
-      } else if (m.medal === '🥈') {
-        sCount++;
-      } else if (m.medal === '🥉') {
-        bCount++;
-      }
+      if (m.medal === '💎') { dCount++; gCount++; }
+      else if (m.medal === '🥇') gCount++;
+      else if (m.medal === '🥈') sCount++;
+      else if (m.medal === '🥉') bCount++;
     });
 
     const asciiParts = [];
@@ -885,17 +878,25 @@ function processCompareData({
   };
 }
 
-
-
-function getSortedCompareRows(rows, sortOrder, filterText = '') {
+function getSortedCompareRows(rows, sortField, sortDir, filterText = '') {
   const sorted = [...rows].sort((a, b) => {
-    if (sortOrder === 'u1-desc') return b.u1Point - a.u1Point || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'u2-desc') return b.u2Point - a.u2Point || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'diff-desc') return b.diff - a.diff || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'diff-asc') return a.diff - b.diff || a.hole.localeCompare(b.hole);
-    if (sortOrder === 'alpha-asc') return a.hole.localeCompare(b.hole);
-    if (sortOrder === 'alpha-desc') return b.hole.localeCompare(a.hole);
-    return 0;
+    let valA, valB;
+    if (sortField === 'hole') {
+      return sortDir === 'asc' ? a.hole.localeCompare(b.hole) : b.hole.localeCompare(a.hole);
+    }
+    if (sortField === 'u1Lang') {
+      return sortDir === 'asc' ? a.u1Lang.localeCompare(b.u1Lang) : b.u1Lang.localeCompare(a.u1Lang);
+    }
+    if (sortField === 'u2Lang') {
+      return sortDir === 'asc' ? a.u2Lang.localeCompare(b.u2Lang) : b.u2Lang.localeCompare(a.u2Lang);
+    }
+    if (sortField === 'u1') { valA = a.u1Point; valB = b.u1Point; }
+    else if (sortField === 'u2') { valA = a.u2Point; valB = b.u2Point; }
+    else if (sortField === 'diff') { valA = a.diff; valB = b.diff; }
+    else { valA = a.u1Point; valB = b.u1Point; }
+
+    if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
+    return a.hole.localeCompare(b.hole);
   });
 
   if (filterText) {
@@ -904,10 +905,7 @@ function getSortedCompareRows(rows, sortOrder, filterText = '') {
   return sorted;
 }
 
-/**
- * Render Comparison Headers and Card Layout with vertical dividers
- */
-function renderCompareResults(data, sortOrder) {
+function renderCompareResults(data) {
   const { u1Name, u2Name, u1TotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
   const statsContainer = document.getElementById('statsContainer');
   const tableHead = document.getElementById('tableHead');
@@ -915,6 +913,8 @@ function renderCompareResults(data, sortOrder) {
   const u1Link = getGolferLink(u1Name);
   const u2Link = getGolferLink(u2Name);
   const modeLabel = scoringMode === 'chars' ? 'Chars' : 'Bytes';
+
+  const thStyle = (f) => `cursor: pointer; user-select: none; color: ${currentCompareSortField === f ? '#38bdf8' : 'inherit'};`;
 
   if (hasUser2) {
     const diffTotal = u1TotalScore - u2TotalScore;
@@ -935,14 +935,21 @@ function renderCompareResults(data, sortOrder) {
       </div>
     `;
 
+    const holeArrow = currentCompareSortField === 'hole' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const u1LangArrow = currentCompareSortField === 'u1Lang' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const u1Arrow = currentCompareSortField === 'u1' ? (currentCompareSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const u2LangArrow = currentCompareSortField === 'u2Lang' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const u2Arrow = currentCompareSortField === 'u2' ? (currentCompareSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const diffArrow = currentCompareSortField === 'diff' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
     tableHead.innerHTML = `
       <tr>
-        <th>Hole</th>
-        <th class="col-border-left">${u1Link} (Lang)</th>
-        <th style="text-align: right;">Score</th>
-        <th class="col-border-left">${u2Link} (Lang)</th>
-        <th style="text-align: right;">Score</th>
-        <th class="col-border-left" style="text-align: right;">Diff</th>
+        <th id="thCompHole" style="${thStyle('hole')}">Hole${holeArrow}</th>
+        <th id="thCompU1Lang" class="col-border-left" style="${thStyle('u1Lang')}">${u1Link} (Lang)${u1LangArrow}</th>
+        <th id="thCompU1Score" style="text-align: right; ${thStyle('u1')}">Score${u1Arrow}</th>
+        <th id="thCompU2Lang" class="col-border-left" style="${thStyle('u2Lang')}">${u2Link} (Lang)${u2LangArrow}</th>
+        <th id="thCompU2Score" style="text-align: right; ${thStyle('u2')}">Score${u2Arrow}</th>
+        <th id="thCompDiff" class="col-border-left" style="text-align: right; ${thStyle('diff')}">Diff${diffArrow}</th>
       </tr>
     `;
   } else {
@@ -961,26 +968,49 @@ function renderCompareResults(data, sortOrder) {
       </div>
     `;
 
+    const holeArrow = currentCompareSortField === 'hole' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const u1LangArrow = currentCompareSortField === 'u1Lang' ? (currentCompareSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const u1Arrow = currentCompareSortField === 'u1' ? (currentCompareSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+
     tableHead.innerHTML = `
       <tr>
-        <th>Hole</th>
-        <th class="col-border-left">Language</th>
-        <th style="text-align: right;">Points</th>
+        <th id="thCompHole" style="${thStyle('hole')}">Hole${holeArrow}</th>
+        <th id="thCompU1Lang" class="col-border-left" style="${thStyle('u1Lang')}">Language${u1LangArrow}</th>
+        <th id="thCompU1Score" style="text-align: right; ${thStyle('u1')}">Points${u1Arrow}</th>
       </tr>
     `;
   }
 
-  sortAndRenderCompareTable(data.rows, sortOrder, hasUser2, scoringMode, u1Name, u2Name);
+  const bindCompSort = (id, fieldName, defaultDir = 'desc') => {
+    const el = document.getElementById(id);
+    el?.addEventListener('click', () => {
+      if (currentCompareSortField === fieldName) {
+        currentCompareSortDir = currentCompareSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        currentCompareSortField = fieldName;
+        currentCompareSortDir = defaultDir;
+      }
+      renderCompareResults(lastCompareResults);
+    });
+  };
+
+  bindCompSort('thCompHole', 'hole', 'asc');
+  bindCompSort('thCompU1Lang', 'u1Lang', 'asc');
+  bindCompSort('thCompU1Score', 'u1', 'desc');
+  if (hasUser2) {
+    bindCompSort('thCompU2Lang', 'u2Lang', 'asc');
+    bindCompSort('thCompU2Score', 'u2', 'desc');
+    bindCompSort('thCompDiff', 'diff', 'asc');
+  }
+
+  sortAndRenderCompareTable(data.rows, currentCompareSortField, currentCompareSortDir, hasUser2, scoringMode, u1Name, u2Name);
   document.getElementById('resultsCard')?.classList.remove('hidden');
 }
 
-/**
- * Render Main Table Data Rows with class hooks for spacing & borders
- */
-function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Name, u2Name) {
+function sortAndRenderCompareTable(rows, sortField, sortDir, hasUser2, scoringMode, u1Name, u2Name) {
   const resultsBody = document.getElementById('resultsBody');
   const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
-  const sorted = getSortedCompareRows(rows, sortOrder, filterText);
+  const sorted = getSortedCompareRows(rows, sortField, sortDir, filterText);
 
   resultsBody.innerHTML = '';
   sorted.forEach(r => {
@@ -1014,8 +1044,7 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Nam
             data-u2-point="${r.u2Point}"
             data-u1-langs="${u1LangsJson}"
             data-u2-langs="${u2LangsJson}"
-            style="cursor: pointer; text-decoration: none;"
-            title="Click to view language breakdown">
+            style="cursor: pointer; text-decoration: none;">
             ${diffText}
           </span>
         </td>
@@ -1032,23 +1061,12 @@ function sortAndRenderCompareTable(rows, sortOrder, hasUser2, scoringMode, u1Nam
 }
 
 // Compare Controls Listeners
-document.getElementById('activeSortSelect')?.addEventListener('change', (e) => {
-  if (lastCompareResults) {
-    renderCompareResults(lastCompareResults, e.target.value);
-  }
-});
-
 document.getElementById('tableSearch')?.addEventListener('input', () => {
-  if (lastCompareResults) {
-    const sortOrder = document.getElementById('activeSortSelect')?.value || 'u1-desc';
-    renderCompareResults(lastCompareResults, sortOrder);
-  }
+  if (lastCompareResults) renderCompareResults(lastCompareResults);
 });
 
 document.getElementById('scoringSelect')?.addEventListener('change', () => {
-  if (document.getElementById('submissionsFile')?.files[0]) {
-    document.getElementById('goBtn')?.click();
-  }
+  document.getElementById('goBtn')?.click();
 });
 
 // JSON Export for Compare
@@ -1069,15 +1087,14 @@ document.getElementById('dlResultsBtn')?.addEventListener('click', () => {
 // Markdown (.md) Export for Compare
 document.getElementById('dlResultsTxtBtn')?.addEventListener('click', () => {
   if (!lastCompareResults) return;
-  const sortOrder = document.getElementById('activeSortSelect')?.value || 'u1-desc';
   const filterText = (document.getElementById('tableSearch')?.value || '').toLowerCase();
-  const mdContent = generateCompareMarkdownTable(lastCompareResults, sortOrder, filterText);
+  const mdContent = generateCompareMarkdownTable(lastCompareResults, currentCompareSortField, currentCompareSortDir, filterText);
   downloadMarkdownFile('compare_results.md', mdContent);
 });
 
-function generateCompareMarkdownTable(compareData, sortOrder, filterText = '') {
+function generateCompareMarkdownTable(compareData, sortField, sortDir, filterText = '') {
   const { rows, u1Name, u2Name, hasUser2 } = compareData;
-  const sortedRows = getSortedCompareRows(rows, sortOrder, filterText);
+  const sortedRows = getSortedCompareRows(rows, sortField, sortDir, filterText);
 
   let headers = [];
   let rightAlignCols = [];
@@ -1094,22 +1111,11 @@ function generateCompareMarkdownTable(compareData, sortOrder, filterText = '') {
     if (hasUser2) {
       const diffStr = r.diff > 0 ? `+${r.diff.toLocaleString()}` : r.diff.toLocaleString();
       return [
-        r.hole,
-        r.u1Lang,
-        r.u1MedalsAscii,
-        r.u1Point.toLocaleString(),
-        r.u2Lang,
-        r.u2MedalsAscii,
-        r.u2Point.toLocaleString(),
-        diffStr
+        r.hole, r.u1Lang, r.u1MedalsAscii, r.u1Point.toLocaleString(),
+        r.u2Lang, r.u2MedalsAscii, r.u2Point.toLocaleString(), diffStr
       ];
     } else {
-      return [
-        r.hole,
-        r.u1Lang,
-        r.u1MedalsAscii,
-        r.u1Point.toLocaleString()
-      ];
+      return [r.hole, r.u1Lang, r.u1MedalsAscii, r.u1Point.toLocaleString()];
     }
   });
 
@@ -1133,13 +1139,11 @@ function generateCompareMarkdownTable(compareData, sortOrder, filterText = '') {
   };
 
   const headerLine = formatRow(headers);
-
   const separatorCells = colWidths.map((w, idx) => {
     const isRight = rightAlignCols.includes(idx);
     return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
   });
   const separatorLine = `| ${separatorCells.join(' | ')} |`;
-
   const dataLines = tableRows.map(r => formatRow(r));
 
   return [headerLine, separatorLine, ...dataLines].join('\n');
@@ -1153,7 +1157,7 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const formulaType = document.getElementById('scoringFormulaSelect')?.value || 'standard';
   const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
   
-  const subFileInput = document.getElementById('submissionsFile')?.files?.[0];
+  const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
   const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
@@ -1163,17 +1167,19 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
     return;
   }
 
-  if (!subFileInput) {
-    handleSolutionsDownload();
-    return;
-  }
-
   showLoading();
   await new Promise(r => setTimeout(r, 50));
 
   try {
-    const [submissionsData, holesData, langsData] = await Promise.all([
-      readJsonFile(subFileInput),
+    const submissionsData = await getSubmissionsData(subFileInput);
+
+    if (!submissionsData) {
+      hideLoading();
+      handleSolutionsDownload();
+      return;
+    }
+
+    const [holesData, langsData] = await Promise.all([
       getOrFetchJson(holesFileInput, 'https://code.golf/api/holes', 'holes.json'),
       getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
     ]);
@@ -1193,8 +1199,9 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       chiExponent
     );
 
-    const sortOrder = document.getElementById('lbSortSelect')?.value || 'points-desc';
-    renderLeaderboard(lastLeaderboardResults, sortOrder);
+    currentLbSortField = 'points';
+    currentLbSortDir = 'desc';
+    renderLeaderboard(lastLeaderboardResults);
   } catch (err) {
     alert(err.message);
   } finally {
@@ -1266,22 +1273,13 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   const totalHolesCount = allHoles.length;
   const leaderboard = [];
   
-  let offset1 = 2.0;
-  let offset2 = 3.0;
+  let offset1 = 2.0, offset2 = 3.0;
   let isFlat1000 = false;
   
-  if (formulaType === 'alt') {
-    offset1 = 8.0;
-    offset2 = 9.0;
-  } else if (formulaType === 'min950') {
-    offset1 = 18.0;
-    offset2 = 19.0;
-  } else if (formulaType === 'min999') {
-    offset1 = 998.0;
-    offset2 = 999.0;
-  } else if (formulaType === 'min1000') {
-    isFlat1000 = true;
-  }
+  if (formulaType === 'alt') { offset1 = 8.0; offset2 = 9.0; }
+  else if (formulaType === 'min950') { offset1 = 18.0; offset2 = 19.0; }
+  else if (formulaType === 'min999') { offset1 = 998.0; offset2 = 999.0; }
+  else if (formulaType === 'min1000') { isFlat1000 = true; }
 
   for (const [targetLower, userInfo] of targetMap.entries()) {
     let totalBytes = 0;
@@ -1353,53 +1351,84 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   return leaderboard;
 }
 
-function sortLeaderboardData(results, sortOrder) {
+function sortLeaderboardData(results, sortField = 'points', sortDir = 'desc') {
   return [...results].sort((a, b) => {
-    if (sortOrder === 'rank-change-desc') {
-      if (b.rankChange !== a.rankChange) {
-        return b.rankChange - a.rankChange;
-      }
-      if (b.points !== a.points) return b.points - a.points;
-      return a.bytes - b.bytes;
+    let valA, valB;
+    if (sortField === 'rank') { valA = a.standardRank; valB = b.standardRank; }
+    else if (sortField === 'name') {
+      return sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     }
+    else if (sortField === 'holes') { valA = a.holes; valB = b.holes; }
+    else if (sortField === 'points') { valA = a.points; valB = b.points; }
+    else if (sortField === 'bytes') { valA = a.bytes; valB = b.bytes; }
+    else if (sortField === 'change') { valA = a.rankChange; valB = b.rankChange; }
+    else { valA = a.points; valB = b.points; }
 
-    if (sortOrder === 'abs-rank-change-desc') {
-      const absA = Math.abs(a.rankChange);
-      const absB = Math.abs(b.rankChange);
-
-      if (absA !== absB) {
-        return absB - absA;
-      }
-      if (b.rankChange !== a.rankChange) {
-        return b.rankChange - a.rankChange;
-      }
-      if (b.points !== a.points) return b.points - a.points;
-      return a.bytes - b.bytes;
-    }
-
+    if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
     if (b.points !== a.points) return b.points - a.points;
     return a.bytes - b.bytes;
   });
 }
 
-function renderLeaderboard(results, sortOrder = 'points-desc') {
-  const sortedResults = sortLeaderboardData(results, sortOrder);
+function renderLeaderboard(results) {
+  const sortedResults = sortLeaderboardData(results, currentLbSortField, currentLbSortDir);
+
+  const thead = document.querySelector('#lbResultsTable thead');
+  if (thead) {
+    const rankArrow = currentLbSortField === 'rank' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const nameArrow = currentLbSortField === 'name' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const holesArrow = currentLbSortField === 'holes' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const pointsArrow = currentLbSortField === 'points' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const bytesArrow = currentLbSortField === 'bytes' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const changeArrow = currentLbSortField === 'change' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+
+    const thStyle = (f) => `cursor: pointer; user-select: none; color: ${currentLbSortField === f ? '#38bdf8' : 'inherit'};`;
+
+    thead.innerHTML = `
+      <tr>
+        <th id="thLbRank" style="${thStyle('rank')}">#${rankArrow}</th>
+        <th id="thLbName" style="${thStyle('name')}">Name${nameArrow}</th>
+        <th id="thLbHoles" style="${thStyle('holes')}">Holes${holesArrow}</th>
+        <th id="thLbPoints" style="text-align: right; ${thStyle('points')}">Points${pointsArrow}</th>
+        <th id="thLbBytes" style="text-align: right; ${thStyle('bytes')}">Bytes${bytesArrow}</th>
+        <th id="thLbChange" style="text-align: right; ${thStyle('change')}">+/-${changeArrow}</th>
+      </tr>
+    `;
+
+    const bindLbSort = (id, fieldName, defaultDir = 'desc') => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        if (currentLbSortField === fieldName) {
+          currentLbSortDir = currentLbSortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentLbSortField = fieldName;
+          currentLbSortDir = defaultDir;
+        }
+        renderLeaderboard(lastLeaderboardResults);
+      });
+    };
+
+    bindLbSort('thLbRank', 'rank', 'asc');
+    bindLbSort('thLbName', 'name', 'asc');
+    bindLbSort('thLbHoles', 'holes', 'desc');
+    bindLbSort('thLbPoints', 'points', 'desc');
+    bindLbSort('thLbBytes', 'bytes', 'asc');
+    bindLbSort('thLbChange', 'change', 'desc');
+  }
+
   const tbody = document.getElementById('lbResultsBody');
   if (!tbody) return;
   tbody.innerHTML = '';
 
   sortedResults.forEach((row) => {
     const tr = document.createElement('tr');
-    
     const changeVal = row.rankChange;
     const changeSign = changeVal > 0 ? `+${changeVal}` : `${changeVal}`;
     const diffClass = changeVal > 0 ? 'diff-pos' : changeVal < 0 ? 'diff-neg' : 'diff-zero';
 
     tr.innerHTML = `
       <td><strong>${row.standardRank}</strong></td>
-      <td>
-        <strong>${getGolferLink(row.name)}</strong>
-      </td>
+      <td><strong>${getGolferLink(row.name)}</strong></td>
       <td>${row.holes.toLocaleString()}</td>
       <td style="text-align: right;"><strong>${row.points.toLocaleString()}</strong></td>
       <td style="text-align: right;">${row.bytes.toLocaleString()}</td>
@@ -1411,13 +1440,6 @@ function renderLeaderboard(results, sortOrder = 'points-desc') {
   document.getElementById('lbResultsCard')?.classList.remove('hidden');
 }
 
-// Leaderboard Listeners
-document.getElementById('lbSortSelect')?.addEventListener('change', (e) => {
-  if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
-    renderLeaderboard(lastLeaderboardResults, e.target.value);
-  }
-});
-
 // Markdown (.md) Export for Leaderboard
 document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
@@ -1425,13 +1447,12 @@ document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
     return;
   }
 
-  const sortOrder = document.getElementById('lbSortSelect')?.value || 'points-desc';
-  const mdContent = generateLeaderboardMarkdownTable(lastLeaderboardResults, sortOrder);
+  const mdContent = generateLeaderboardMarkdownTable(lastLeaderboardResults, currentLbSortField, currentLbSortDir);
   downloadMarkdownFile('leaderboard.md', mdContent);
 });
 
-function generateLeaderboardMarkdownTable(results, sortOrder = 'points-desc') {
-  const sortedResults = sortLeaderboardData(results, sortOrder);
+function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir = 'desc') {
+  const sortedResults = sortLeaderboardData(results, sortField, sortDir);
   const headers = ['#', 'golfer', 'holes', 'points', 'bytes', '+/-'];
   const rightAlignCols = [0, 2, 3, 4, 5];
   
@@ -1464,13 +1485,11 @@ function generateLeaderboardMarkdownTable(results, sortOrder = 'points-desc') {
   };
 
   const headerLine = formatRow(headers);
-  
   const separatorCells = colWidths.map((w, idx) => {
     const isRight = rightAlignCols.includes(idx);
     return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
   });
   const separatorLine = `| ${separatorCells.join(' | ')} |`;
-
   const dataLines = tableRows.map(r => formatRow(r));
 
   return [headerLine, separatorLine, ...dataLines].join('\n');
