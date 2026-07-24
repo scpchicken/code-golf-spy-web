@@ -651,7 +651,6 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
     hideLoading();
   }
 });
-
 function processCompareData({ 
   jsonData, 
   u1Name, 
@@ -908,16 +907,22 @@ function processCompareData({
     });
   }
 
+  // Regular scores (using current UI settings for chi, lambda, and diamond bonus)
   const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
   const u2BaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
 
-  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, 1));
-  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, 1)) : 0;
+  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
+  const u1RawScores = rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
+  const u2RawScores = rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
+
+  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1RawScores, totalHolesCount, 1));
+  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHolesCount, 1)) : 0;
 
   const u1TotalScore = u1BaseScore + Math.round(u1Diamonds * diamondBonus);
-  const u1RawTotalScore = u1RawBaseScore + Math.round(u1Diamonds * diamondBonus);
+  const u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
+
   const u2TotalScore = hasUser2 ? (u2BaseScore + Math.round(u2Diamonds * diamondBonus)) : 0;
-  const u2RawTotalScore = hasUser2 ? (u2RawBaseScore + Math.round(u2Diamonds * diamondBonus)) : 0;
+  const u2RawTotalScore = hasUser2 ? u2RawBaseScore : 0; // Diamond bonus = 0
 
   return {
     rows,
@@ -984,14 +989,77 @@ function updateCompareScores() {
   const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, chiExponent));
   const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
 
-  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, 1));
-  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, 1)) : 0;
+  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
+  const u1RawScores = lastCompareResults.rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
+  const u2RawScores = lastCompareResults.rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
+
+  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1RawScores, totalHoles, 1));
+  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
 
   lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
-  lastCompareResults.u1RawTotalScore = u1RawBaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
+  lastCompareResults.u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
+
   if (lastCompareResults.hasUser2) {
     lastCompareResults.u2TotalScore = u2BaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
-    lastCompareResults.u2RawTotalScore = u2RawBaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
+    lastCompareResults.u2RawTotalScore = u2RawBaseScore; // Diamond bonus = 0
+  }
+}
+
+function updateCompareScores() {
+  if (!lastCompareResults) return;
+  const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || '0');
+  const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || '1');
+  const lambdaExponent = parseFloat(document.getElementById('lambdaSlider')?.value || '1000');
+
+  const totalHoles = lastCompareResults.rows.length;
+  const totalLangsCount = lastCompareResults.totalLangsCount || 1;
+
+  lastCompareResults.rows.forEach(r => {
+    if (r.u1AllLangs && r.u1AllLangs.length > 0) {
+      const u1LangScores = r.u1AllLangs.map(c => c.point);
+      if (lambdaExponent >= 1000) {
+        r.u1Point = Math.round(Math.max(...u1LangScores, 0));
+      } else {
+        r.u1Point = Math.round(calculateLangPowerMean(u1LangScores, totalLangsCount, lambdaExponent));
+      }
+    } else {
+      r.u1Point = 0;
+    }
+
+    if (lastCompareResults.hasUser2) {
+      if (r.u2AllLangs && r.u2AllLangs.length > 0) {
+        const u2LangScores = r.u2AllLangs.map(c => c.point);
+        if (lambdaExponent >= 1000) {
+          r.u2Point = Math.round(Math.max(...u2LangScores, 0));
+        } else {
+          r.u2Point = Math.round(calculateLangPowerMean(u2LangScores, totalLangsCount, lambdaExponent));
+        }
+      } else {
+        r.u2Point = 0;
+      }
+      r.diff = r.u1Point - r.u2Point;
+    }
+  });
+
+  const u1Scores = lastCompareResults.rows.map(r => r.u1Point);
+  const u2Scores = lastCompareResults.rows.map(r => r.u2Point);
+
+  const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, chiExponent));
+  const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
+
+  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
+  const u1RawScores = lastCompareResults.rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
+  const u2RawScores = lastCompareResults.rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
+
+  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1RawScores, totalHoles, 1));
+  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
+
+  lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
+  lastCompareResults.u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
+
+  if (lastCompareResults.hasUser2) {
+    lastCompareResults.u2TotalScore = u2BaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
+    lastCompareResults.u2RawTotalScore = u2RawBaseScore; // Diamond bonus = 0
   }
 }
 
