@@ -1,6 +1,5 @@
 /**
- * Code Golf Comparison & Custom Leaderboard Script
- * (Diamond Bonus, Dynamic Base Min Score, Hole Exponent (χ), & Lang Exponent (λ) Support)
+ * Code Golf Comparison, Custom Leaderboard & Solutions Query Script
  */
 
 // --- Global Constants & State ---
@@ -8,6 +7,7 @@ const DEFAULT_GOLFERS_LIST = "zzh1996, Steffan153, codereport, ovs-code, pardoui
 
 let lastCompareResults = null;
 let lastLeaderboardResults = [];
+let lastQueryResults = [];
 
 // Compare Sort State
 let currentCompareSortField = 'u1';
@@ -16,6 +16,10 @@ let currentCompareSortDir = 'desc';
 // Leaderboard Sort State
 let currentLbSortField = 'points';
 let currentLbSortDir = 'desc';
+
+// Query Sort State
+let currentQuerySortField = 'bytes';
+let currentQuerySortDir = 'desc';
 
 // --- Unicode & Visual Alignment Helpers ---
 function getVisualWidth(str) {
@@ -162,15 +166,12 @@ function compareMedalCandidates(a, b) {
   const rankA = medalRank[a.medal] || 5;
   const rankB = medalRank[b.medal] || 5;
 
-  // 1. Sort by Medal Tier (Diamond -> Gold -> Silver -> Bronze)
   if (rankA !== rankB) return rankA - rankB;
 
-  // 2. Sort by Points (Highest score first)
   const ptA = a.point || 0;
   const ptB = b.point || 0;
   if (ptA !== ptB) return ptB - ptA;
 
-  // 3. Tiebreaker: Lowest byte count
   return (a.loginByte || 0) - (b.loginByte || 0);
 }
 
@@ -487,28 +488,45 @@ document.getElementById('resultsBody')?.addEventListener('click', (e) => {
 // Navigation Switcher
 const navCompareBtn = document.getElementById('navCompareBtn');
 const navLeaderboardBtn = document.getElementById('navLeaderboardBtn');
+const navQueryBtn = document.getElementById('navQueryBtn');
 const comparePage = document.getElementById('comparePage');
 const leaderboardPage = document.getElementById('leaderboardPage');
+const queryPage = document.getElementById('queryPage');
 
 navCompareBtn?.addEventListener('click', () => {
   navCompareBtn.classList.add('active');
   navLeaderboardBtn.classList.remove('active');
+  navQueryBtn?.classList.remove('active');
   comparePage.classList.remove('hidden');
   leaderboardPage.classList.add('hidden');
+  queryPage?.classList.add('hidden');
 });
 
 navLeaderboardBtn?.addEventListener('click', () => {
   navLeaderboardBtn.classList.add('active');
   navCompareBtn.classList.remove('active');
+  navQueryBtn?.classList.remove('active');
   leaderboardPage.classList.remove('hidden');
   comparePage.classList.add('hidden');
+  queryPage?.classList.add('hidden');
+});
+
+navQueryBtn?.addEventListener('click', () => {
+  navQueryBtn.classList.add('active');
+  navCompareBtn.classList.remove('active');
+  navLeaderboardBtn.classList.remove('active');
+  queryPage?.classList.remove('hidden');
+  comparePage.classList.add('hidden');
+  leaderboardPage.classList.add('hidden');
 });
 
 // Shortcuts
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
-    if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
+    if (queryPage && !queryPage.classList.contains('hidden')) {
+      document.getElementById('queryGoBtn')?.click();
+    } else if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
       document.getElementById('lbGoBtn')?.click();
     } else if (comparePage && !comparePage.classList.contains('hidden')) {
       document.getElementById('goBtn')?.click();
@@ -901,7 +919,6 @@ function updateCompareScores() {
   const totalHoles = lastCompareResults.rows.length;
   const totalLangsCount = lastCompareResults.totalLangsCount || 1;
 
-  // Recalculate each row's u1Point and u2Point based on lambdaExponent
   lastCompareResults.rows.forEach(r => {
     if (r.u1AllLangs && r.u1AllLangs.length > 0) {
       const u1LangScores = r.u1AllLangs.map(c => c.point);
@@ -1343,7 +1360,6 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   }
   const totalLangsCount = validLangs ? validLangs.size : (allLangsSet.size || 1);
 
-  // --- Calculate 💎 Diamond counts per user ---
   const holeLangUsers = new Map();
   for (const [userLangKey, byte] of userBestSubmissions.entries()) {
     const parts = userLangKey.split("::");
@@ -1455,10 +1471,6 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, inc
   return leaderboard;
 }
 
-/**
- * Recalculates effective points (base points + diamond bonus contribution)
- * and updates standard ranks & rank changes for all golfers.
- */
 function updateLeaderboardScoresAndRanks() {
   if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) return;
 
@@ -1615,6 +1627,337 @@ function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir
     row.diamondContrib.toLocaleString(),
     row.bytes.toLocaleString(),
     row.rankChange > 0 ? `+${row.rankChange}` : String(row.rankChange)
+  ]);
+
+  const colWidths = headers.map((header, colIdx) => {
+    let maxW = getVisualWidth(header);
+    tableRows.forEach(r => {
+      const w = getVisualWidth(r[colIdx]);
+      if (w > maxW) maxW = w;
+    });
+    return Math.max(maxW, 4);
+  });
+
+  const formatRow = (rowCells) => {
+    const formattedCells = rowCells.map((cell, idx) => {
+      const width = colWidths[idx];
+      return rightAlignCols.includes(idx)
+        ? padVisualStart(cell, width)
+        : padVisualEnd(cell, width);
+    });
+    return `| ${formattedCells.join(' | ')} |`;
+  };
+
+  const headerLine = formatRow(headers);
+  const separatorCells = colWidths.map((w, idx) => {
+    const isRight = rightAlignCols.includes(idx);
+    return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
+  });
+  const separatorLine = `| ${separatorCells.join(' | ')} |`;
+  const dataLines = tableRows.map(r => formatRow(r));
+
+  return [headerLine, separatorLine, ...dataLines].join('\n');
+}
+
+// ==========================================
+// PAGE 3: Solutions Query Logic (Bytes Only)
+// ==========================================
+document.getElementById('queryGoBtn')?.addEventListener('click', async () => {
+  const queryType = document.getElementById('queryTypeSelect')?.value || 'longest_golds';
+
+  const subFileInput = document.getElementById('submissionsFile');
+  const holesFileInput = document.getElementById('holesFile');
+  const langsFileInput = document.getElementById('langsFile');
+  const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
+
+  showLoading();
+  await new Promise(r => setTimeout(r, 50));
+
+  try {
+    const submissionsData = await getSubmissionsData(subFileInput);
+
+    if (!submissionsData) {
+      hideLoading();
+      handleSolutionsDownload();
+      return;
+    }
+
+    const [holesData, langsData] = await Promise.all([
+      getOrFetchJson(holesFileInput, 'https://code.golf/api/holes', 'holes.json'),
+      getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
+    ]);
+
+    lastQueryResults = processQueryData(
+      submissionsData,
+      holesData,
+      langsData,
+      includeExperimental,
+      queryType
+    );
+
+    currentQuerySortField = 'bytes';
+    currentQuerySortDir = 'desc';
+
+    const titleEl = document.getElementById('queryResultsTitle');
+    if (titleEl) {
+      const typeNames = {
+        'longest_golds': 'Longest Bytes Golds',
+        'longest_diamonds': 'Longest Bytes Diamonds',
+        'longest_unicorns': 'Longest Bytes Unicorns'
+      };
+      titleEl.textContent = `${typeNames[queryType] || 'Query Results'} (${lastQueryResults.length.toLocaleString()})`;
+    }
+
+    renderQueryResults(lastQueryResults);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    hideLoading();
+  }
+});
+
+/**
+ * Processes solutions for BYTES scoring only.
+ * - Gold: shortest solution in a lang/combo pair
+ * - Diamond: uncontested gold (only 1 golfer at shortest solution length)
+ * - Unicorn: diamond where that solution is the only solution in a lang/combo pair
+ */
+function processQueryData(jsonData, holesJson, langsJson, includeExperimental, queryType) {
+  let validHoles = null;
+  if (holesJson && Array.isArray(holesJson)) {
+    validHoles = new Set(
+      holesJson
+        .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
+        .map(h => h.id)
+    );
+  }
+
+  let validLangs = null;
+  if (langsJson && Array.isArray(langsJson)) {
+    validLangs = new Set(
+      langsJson
+        .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
+        .map(l => l.id)
+    );
+  }
+
+  // Aggregate user solutions per hole::lang pair (Bytes only)
+  const comboMap = new Map();
+
+  for (const x of jsonData) {
+    if (x.scoring !== "bytes") continue;
+
+    const lang = x.lang;
+    const hole = x.hole;
+    const login = x.login;
+    const byte = Number(x.bytes);
+
+    if (validHoles && !validHoles.has(hole)) continue;
+    if (validLangs && !validLangs.has(lang)) continue;
+
+    const key = `${hole}::${lang}`;
+    if (!comboMap.has(key)) {
+      comboMap.set(key, new Map());
+    }
+    const userMap = comboMap.get(key);
+    if (!userMap.has(login) || byte < userMap.get(login)) {
+      userMap.set(login, byte);
+    }
+  }
+
+  const results = [];
+
+  for (const [key, userMap] of comboMap.entries()) {
+    const parts = key.split("::");
+    const hole = parts[0];
+    const lang = parts[1];
+
+    const solvers = Array.from(userMap.entries()).map(([login, byte]) => ({ login, byte }));
+    if (solvers.length === 0) continue;
+
+    const totalSolvers = solvers.length;
+    let minBytes = Infinity;
+    for (const s of solvers) {
+      if (s.byte < minBytes) minBytes = s.byte;
+    }
+
+    const minSolvers = solvers.filter(s => s.byte === minBytes);
+    const tiedCount = minSolvers.length;
+
+    const isDiamond = tiedCount === 1;
+    const isUnicorn = isDiamond && totalSolvers === 1;
+
+    minSolvers.forEach(solver => {
+      let matchesQuery = false;
+      let medalType = "🥇 Gold";
+
+      if (isUnicorn) {
+        medalType = "🦄 Unicorn";
+      } else if (isDiamond) {
+        medalType = "💎 Diamond";
+      }
+
+      if (queryType === "longest_unicorns") {
+        if (isUnicorn) matchesQuery = true;
+      } else if (queryType === "longest_diamonds") {
+        if (isDiamond) matchesQuery = true;
+      } else if (queryType === "longest_golds") {
+        matchesQuery = true; // All minSolvers are golds
+      }
+
+      if (matchesQuery) {
+        results.push({
+          hole,
+          lang,
+          login: solver.login,
+          bytes: solver.byte,
+          totalSolvers,
+          tiedCount,
+          isUnicorn,
+          isDiamond,
+          medalType
+        });
+      }
+    });
+  }
+
+  return results;
+}
+
+function sortQueryData(results, sortField = 'bytes', sortDir = 'desc') {
+  return [...results].sort((a, b) => {
+    let valA, valB;
+    if (sortField === 'bytes') { valA = a.bytes; valB = b.bytes; }
+    else if (sortField === 'hole') { return sortDir === 'asc' ? a.hole.localeCompare(b.hole) : b.hole.localeCompare(a.hole); }
+    else if (sortField === 'lang') { return sortDir === 'asc' ? a.lang.localeCompare(b.lang) : b.lang.localeCompare(a.lang); }
+    else if (sortField === 'login') { return sortDir === 'asc' ? a.login.localeCompare(b.login) : b.login.localeCompare(a.login); }
+    else if (sortField === 'type') { return sortDir === 'asc' ? a.medalType.localeCompare(b.medalType) : b.medalType.localeCompare(a.medalType); }
+    else { valA = a.bytes; valB = b.bytes; }
+
+    if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
+    return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang) || a.login.localeCompare(b.login);
+  });
+}
+
+function renderQueryResults(results) {
+  const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+  let filtered = results;
+  if (filterText) {
+    filtered = results.filter(r =>
+      r.hole.toLowerCase().includes(filterText) ||
+      r.lang.toLowerCase().includes(filterText) ||
+      r.login.toLowerCase().includes(filterText)
+    );
+  }
+
+  const sortedResults = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
+  
+  // --- CAP TO TOP 500 TO PREVENT DOM LAG ---
+  const displayResults = sortedResults.slice(0, 500);
+
+  const thead = document.querySelector('#queryResultsTable thead');
+  if (thead) {
+    const thStyle = (f) => `cursor: pointer; user-select: none; color: ${currentQuerySortField === f ? '#38bdf8' : 'inherit'};`;
+    const holeArrow = currentQuerySortField === 'hole' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const langArrow = currentQuerySortField === 'lang' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const loginArrow = currentQuerySortField === 'login' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const bytesArrow = currentQuerySortField === 'bytes' ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const typeArrow = currentQuerySortField === 'type' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+    thead.innerHTML = `
+      <tr>
+        <th>#</th>
+        <th id="thQueryHole" style="${thStyle('hole')}">Hole${holeArrow}</th>
+        <th id="thQueryLang" style="${thStyle('lang')}">Language${langArrow}</th>
+        <th id="thQueryLogin" style="${thStyle('login')}">Golfer${loginArrow}</th>
+        <th id="thQueryBytes" style="text-align: right; ${thStyle('bytes')}">Bytes${bytesArrow}</th>
+        <th id="thQueryType" style="text-align: right; ${thStyle('type')}">Type${typeArrow}</th>
+      </tr>
+    `;
+
+    const bindQuerySort = (id, fieldName, defaultDir = 'desc') => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        if (currentQuerySortField === fieldName) {
+          currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentQuerySortField = fieldName;
+          currentQuerySortDir = defaultDir;
+        }
+        renderQueryResults(lastQueryResults);
+      });
+    };
+
+    bindQuerySort('thQueryHole', 'hole', 'asc');
+    bindQuerySort('thQueryLang', 'lang', 'asc');
+    bindQuerySort('thQueryLogin', 'login', 'asc');
+    bindQuerySort('thQueryBytes', 'bytes', 'desc');
+    bindQuerySort('thQueryType', 'type', 'asc');
+  }
+
+  const tbody = document.getElementById('queryResultsBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  // Render only the top 500 capped items
+  displayResults.forEach((row, index) => {
+    const tr = document.createElement('tr');
+    const holeUrl = `https://code.golf/${encodeURIComponent(row.hole)}`;
+    const langUrl = `https://code.golf/${encodeURIComponent(row.hole)}#${encodeURIComponent(row.lang)}`;
+
+    tr.innerHTML = `
+      <td>${index + 1}</td>
+      <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(row.hole)}</strong></a></td>
+      <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; font-weight: bold;">${escapeHtml(row.lang)}</a></td>
+      <td>${getGolferLink(row.login)}</td>
+      <td style="text-align: right;"><strong>${row.bytes.toLocaleString()}</strong></td>
+      <td style="text-align: right;">${row.medalType}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('queryResultsCard')?.classList.remove('hidden');
+}
+
+document.getElementById('queryTableSearch')?.addEventListener('input', () => {
+  if (lastQueryResults && lastQueryResults.length > 0) {
+    renderQueryResults(lastQueryResults);
+  }
+});
+
+document.getElementById('exportQueryTxtBtn')?.addEventListener('click', () => {
+  if (!lastQueryResults || lastQueryResults.length === 0) {
+    alert("No query data to export!");
+    return;
+  }
+
+  const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+  let filtered = lastQueryResults;
+  if (filterText) {
+    filtered = lastQueryResults.filter(r =>
+      r.hole.toLowerCase().includes(filterText) ||
+      r.lang.toLowerCase().includes(filterText) ||
+      r.login.toLowerCase().includes(filterText)
+    );
+  }
+
+  const sorted = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
+  const queryTypeSel = document.getElementById('queryTypeSelect')?.value || 'query';
+  const mdContent = generateQueryMarkdownTable(sorted);
+  downloadMarkdownFile(`${queryTypeSel}_results.md`, mdContent);
+});
+
+function generateQueryMarkdownTable(results) {
+  const headers = ['#', 'hole', 'language', 'golfer', 'bytes', 'type'];
+  const rightAlignCols = [0, 4, 5];
+
+  const tableRows = results.map((row, idx) => [
+    String(idx + 1),
+    row.hole,
+    row.lang,
+    row.login,
+    row.bytes.toLocaleString(),
+    row.medalType
   ]);
 
   const colWidths = headers.map((header, colIdx) => {

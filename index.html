@@ -16,6 +16,7 @@
   <nav class="navbar">
     <button id="navCompareBtn" class="nav-tab active">Compare Users</button>
     <button id="navLeaderboardBtn" class="nav-tab">Custom Leaderboard</button>
+    <button id="navQueryBtn" class="nav-tab">Query Solutions</button>
   </nav>
 
   <!-- Loading Overlay -->
@@ -303,6 +304,58 @@
               </tr>
             </thead>
             <tbody id="lbResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE 3: Query Solutions View -->
+    <div id="queryPage" class="hidden">
+      <div class="card">
+        <h2>Query Solutions (Bytes)</h2>
+        <p class="subtitle" style="margin-bottom: 15px; color: var(--text-dim);">
+          Query and rank solutions across all holes and languages using <strong>bytes scoring</strong>.
+        </p>
+
+        <div class="grid-form">
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label for="queryTypeSelect">Sort & Filter Query</label>
+            <select id="queryTypeSelect">
+              <option value="longest_golds">Longest BYTES Golds</option>
+              <option value="longest_diamonds">Longest BYTES Diamonds</option>
+              <option value="longest_unicorns">Longest BYTES Unicorns</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="button-group" style="margin-top: 1.5rem;">
+          <button class="btn-submit" id="queryGoBtn">Run Query</button>
+        </div>
+      </div>
+
+      <!-- Query Results Card -->
+      <div id="queryResultsCard" class="card hidden" style="margin-top: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+          <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results</h3>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <input type="text" id="queryTableSearch" class="search-bar" placeholder="Filter hole, lang, or golfer..." style="height: 38px;">
+            <button id="exportQueryTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table id="queryResultsTable" class="main-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Hole</th>
+                <th>Language</th>
+                <th>Golfer</th>
+                <th style="text-align: right;">Bytes</th>
+                <th style="text-align: right;">Type</th>
+              </tr>
+            </thead>
+            <tbody id="queryResultsBody"></tbody>
           </table>
         </div>
       </div>
