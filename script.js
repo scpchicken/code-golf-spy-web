@@ -242,6 +242,38 @@ document.getElementById('modalCloseBtn')?.addEventListener('click', () => {
   solutionsModal?.classList.add('hidden');
 });
 
+// --- Startup Modal Event Handlers ---
+const initialModal = document.getElementById('initialModal');
+const initialUploadBtn = document.getElementById('initialUploadBtn');
+const initialFileInput = document.getElementById('initialFileInput');
+const initialDownloadBtn = document.getElementById('initialDownloadBtn');
+const initialCancelBtn = document.getElementById('initialCancelBtn');
+const submissionsFileInput = document.getElementById('submissionsFile');
+
+initialUploadBtn?.addEventListener('click', () => {
+  initialFileInput?.click();
+});
+
+initialFileInput?.addEventListener('change', (e) => {
+  if (e.target.files && e.target.files.length > 0) {
+    if (submissionsFileInput) {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(e.target.files[0]);
+      submissionsFileInput.files = dataTransfer.files;
+    }
+    initialModal?.classList.add('hidden');
+  }
+});
+
+initialDownloadBtn?.addEventListener('click', () => {
+  initialModal?.classList.add('hidden');
+  handleSolutionsDownload();
+});
+
+initialCancelBtn?.addEventListener('click', () => {
+  initialModal?.classList.add('hidden');
+});
+
 function showExtraMedalsModal(hole, golfer, allMedals) {
   let modal = document.getElementById('extraMedalsModal');
   if (!modal) {

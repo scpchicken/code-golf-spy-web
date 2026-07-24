@@ -24,6 +24,22 @@
     <div class="spinner"></div>
   </div>
 
+  <!-- Startup Solutions Modal -->
+  <div id="initialModal" class="loading-overlay" style="background: rgba(0,0,0,0.75); z-index: 1000;">
+    <div class="card" style="max-width: 420px; width: 90%; text-align: center; display: flex; flex-direction: column; gap: 1rem;">
+      <h3 style="margin: 0; color: var(--accent);">Welcome to Code Golf Spy</h3>
+      <p style="margin: 0; color: var(--text-dim, #ccc); font-size: 0.95rem; line-height: 1.4;">
+        Please upload or download <strong>solutions.json</strong> to get started.
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
+        <input type="file" id="initialFileInput" accept=".json" style="display: none;">
+        <button id="initialUploadBtn" class="btn-submit">📁 Upload solutions.json</button>
+        <button id="initialDownloadBtn" class="btn-secondary">📥 Download solutions.json</button>
+        <button id="initialCancelBtn" class="btn-secondary" style="background: transparent; border: 1px solid rgba(255,255,255,0.2);">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Custom Solutions Download Modal -->
   <div id="solutionsModal" class="loading-overlay hidden" style="background: rgba(0,0,0,0.75); z-index: 1000;">
     <div class="card" style="max-width: 420px; width: 90%; text-align: center; display: flex; flex-direction: column; gap: 1rem;">
@@ -361,6 +377,14 @@
       </div>
     </div>
   </div>
+  <footer class="app-footer">
+    <p>
+      View source on 
+      <a href="https://github.com/scpchicken/code-golf-spy-web" target="_blank" rel="noopener noreferrer">
+        GitHub
+      </a>
+    </p>
+  </footer>
 
   <script src="script.js"></script>
 </body>
