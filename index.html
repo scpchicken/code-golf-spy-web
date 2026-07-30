@@ -200,6 +200,27 @@
           </table>
         </div>
       </div>
+
+      <!-- Exclusive Golds Section -->
+      <div id="exclusiveGoldsCard" class="card hidden" style="margin-top: 1.5rem;">
+        <h3 style="margin-top: 0; margin-bottom: 1rem; color: var(--accent);">
+          Golds <span id="u2NameSpan">User 2</span> has that <span id="u1NameSpan">User 1</span> doesn't
+        </h3>
+        <div style="overflow-x: auto;">
+          <table id="exclusiveGoldsTable" class="main-table results-table">
+            <thead>
+              <tr>
+                <th>Hole</th>
+                <th>Language</th>
+                <th style="text-align: right;">Medal</th>
+                <th style="text-align: right;">Score</th>
+                <th style="text-align: right;">Gold Holders</th>
+              </tr>
+            </thead>
+            <tbody id="exclusiveGoldsBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- PAGE 2: Custom Leaderboard View -->
@@ -351,8 +372,12 @@
 
       <!-- Query Results Card -->
       <div id="queryResultsCard" class="card hidden" style="margin-top: 1.5rem;">
+        
+        <!-- NEW: Stats container for Golds, Diamonds, and Unicorns -->
+        <div class="stats-row" id="queryStatsContainer" style="margin-bottom: 1.5rem;"></div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
-          <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results</h3>
+          <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results (Top 100)</h3>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <input type="text" id="queryTableSearch" class="search-bar" placeholder="Filter hole, lang, or golfer..." style="height: 38px;">
             <button id="exportQueryTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
@@ -386,6 +411,11 @@
     </p>
   </footer>
 
-  <script src="script.js"></script>
+  <script src="utils.js"></script>
+  <script src="modals.js"></script>
+  <script src="compare.js"></script>
+  <script src="leaderboard.js"></script>
+  <script src="query.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>

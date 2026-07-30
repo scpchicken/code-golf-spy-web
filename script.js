@@ -651,6 +651,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
     hideLoading();
   }
 });
+
 function processCompareData({ 
   jsonData, 
   u1Name, 
@@ -783,6 +784,37 @@ function processCompareData({
     }
   }
 
+  const u2ExclusiveGolds = [];
+  if (hasUser2) {
+    for (const [key, users] of holeLangUsers.entries()) {
+      const parts = key.split("::");
+      const hole = parts[0];
+      const lang = parts[1];
+
+      const u1Medal = medalsMap.get(`${key}::${u1Lower}`) || "";
+      const u2Medal = medalsMap.get(`${key}::${u2Lower}`) || "";
+
+      const u2HasGold = u2Medal === "🥇" || u2Medal === "💎";
+      const u1HasGold = u1Medal === "🥇" || u1Medal === "💎";
+
+      if (u2HasGold && !u1HasGold) {
+        let goldHolders = 0;
+        for (const u of users) {
+          const m = medalsMap.get(`${key}::${u.login}`);
+          if (m === "🥇" || m === "💎") {
+            goldHolders++;
+          }
+        }
+        const u2Byte = userBestSubmissions.get(`${key}::${u2Lower}`);
+        u2ExclusiveGolds.push({ hole, lang, medal: u2Medal, byte: u2Byte, goldHolders });
+      }
+    }
+    u2ExclusiveGolds.sort((a, b) => {
+      if (a.goldHolders !== b.goldHolders) return b.goldHolders - a.goldHolders;
+      return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang);
+    });
+  }
+
   function getUserHoleResult(hole, targetLoginLower) {
     if (!targetLoginLower) return { lang: "-", point: 0, medal: "", allMedals: [], medalsAscii: "-", allLangScores: [] };
 
@@ -907,11 +939,9 @@ function processCompareData({
     });
   }
 
-  // Regular scores (using current UI settings for chi, lambda, and diamond bonus)
   const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHolesCount, chiExponent));
   const u2BaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHolesCount, chiExponent)) : 0;
 
-  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
   const u1RawScores = rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
   const u2RawScores = rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
 
@@ -919,10 +949,10 @@ function processCompareData({
   const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHolesCount, 1)) : 0;
 
   const u1TotalScore = u1BaseScore + Math.round(u1Diamonds * diamondBonus);
-  const u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
+  const u1RawTotalScore = u1RawBaseScore;
 
   const u2TotalScore = hasUser2 ? (u2BaseScore + Math.round(u2Diamonds * diamondBonus)) : 0;
-  const u2RawTotalScore = hasUser2 ? u2RawBaseScore : 0; // Diamond bonus = 0
+  const u2RawTotalScore = hasUser2 ? u2RawBaseScore : 0;
 
   return {
     rows,
@@ -943,7 +973,8 @@ function processCompareData({
     chiExponent,
     lambdaExponent,
     diamondBonus,
-    totalLangsCount
+    totalLangsCount,
+    u2ExclusiveGolds
   };
 }
 
@@ -989,7 +1020,6 @@ function updateCompareScores() {
   const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, chiExponent));
   const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
 
-  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
   const u1RawScores = lastCompareResults.rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
   const u2RawScores = lastCompareResults.rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
 
@@ -997,69 +1027,11 @@ function updateCompareScores() {
   const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
 
   lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
-  lastCompareResults.u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
+  lastCompareResults.u1RawTotalScore = u1RawBaseScore;
 
   if (lastCompareResults.hasUser2) {
     lastCompareResults.u2TotalScore = u2BaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
-    lastCompareResults.u2RawTotalScore = u2RawBaseScore; // Diamond bonus = 0
-  }
-}
-
-function updateCompareScores() {
-  if (!lastCompareResults) return;
-  const diamondBonus = parseFloat(document.getElementById('diamondValue')?.textContent || '0');
-  const chiExponent = parseFloat(document.getElementById('chiValue')?.textContent || '1');
-  const lambdaExponent = parseFloat(document.getElementById('lambdaSlider')?.value || '1000');
-
-  const totalHoles = lastCompareResults.rows.length;
-  const totalLangsCount = lastCompareResults.totalLangsCount || 1;
-
-  lastCompareResults.rows.forEach(r => {
-    if (r.u1AllLangs && r.u1AllLangs.length > 0) {
-      const u1LangScores = r.u1AllLangs.map(c => c.point);
-      if (lambdaExponent >= 1000) {
-        r.u1Point = Math.round(Math.max(...u1LangScores, 0));
-      } else {
-        r.u1Point = Math.round(calculateLangPowerMean(u1LangScores, totalLangsCount, lambdaExponent));
-      }
-    } else {
-      r.u1Point = 0;
-    }
-
-    if (lastCompareResults.hasUser2) {
-      if (r.u2AllLangs && r.u2AllLangs.length > 0) {
-        const u2LangScores = r.u2AllLangs.map(c => c.point);
-        if (lambdaExponent >= 1000) {
-          r.u2Point = Math.round(Math.max(...u2LangScores, 0));
-        } else {
-          r.u2Point = Math.round(calculateLangPowerMean(u2LangScores, totalLangsCount, lambdaExponent));
-        }
-      } else {
-        r.u2Point = 0;
-      }
-      r.diff = r.u1Point - r.u2Point;
-    }
-  });
-
-  const u1Scores = lastCompareResults.rows.map(r => r.u1Point);
-  const u2Scores = lastCompareResults.rows.map(r => r.u2Point);
-
-  const u1BaseScore = Math.round(calculateHolePowerMean(u1Scores, totalHoles, chiExponent));
-  const u2BaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2Scores, totalHoles, chiExponent)) : 0;
-
-  // Raw scores (explicitly assume chi = 1, lambda = infinity [max lang score], diamond bonus = 0)
-  const u1RawScores = lastCompareResults.rows.map(r => r.u1AllLangs && r.u1AllLangs.length > 0 ? Math.max(...r.u1AllLangs.map(c => c.point), 0) : 0);
-  const u2RawScores = lastCompareResults.rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
-
-  const u1RawBaseScore = Math.round(calculateHolePowerMean(u1RawScores, totalHoles, 1));
-  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
-
-  lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
-  lastCompareResults.u1RawTotalScore = u1RawBaseScore; // Diamond bonus = 0
-
-  if (lastCompareResults.hasUser2) {
-    lastCompareResults.u2TotalScore = u2BaseScore + Math.round(lastCompareResults.u2Diamonds * diamondBonus);
-    lastCompareResults.u2RawTotalScore = u2RawBaseScore; // Diamond bonus = 0
+    lastCompareResults.u2RawTotalScore = u2RawBaseScore;
   }
 }
 
@@ -1091,7 +1063,7 @@ function getSortedCompareRows(rows, sortField, sortDir, filterText = '') {
 }
 
 function renderCompareResults(data) {
-  const { u1Name, u2Name, u1TotalScore, u1RawTotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2RawTotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode } = data;
+  const { u1Name, u2Name, u1TotalScore, u1RawTotalScore, u1SolvedCount, u1Golds, u1Diamonds, u2TotalScore, u2RawTotalScore, u2SolvedCount, u2Golds, u2Diamonds, hasUser2, scoringMode, u2ExclusiveGolds } = data;
   const statsContainer = document.getElementById('statsContainer');
   const tableHead = document.getElementById('tableHead');
 
@@ -1190,6 +1162,35 @@ function renderCompareResults(data) {
 
   sortAndRenderCompareTable(data.rows, currentCompareSortField, currentCompareSortDir, hasUser2, scoringMode, u1Name, u2Name);
   document.getElementById('resultsCard')?.classList.remove('hidden');
+
+  const exclusiveGoldsCard = document.getElementById('exclusiveGoldsCard');
+  const exclusiveGoldsBody = document.getElementById('exclusiveGoldsBody');
+  const u1NameSpan = document.getElementById('u1NameSpan');
+  const u2NameSpan = document.getElementById('u2NameSpan');
+
+  if (hasUser2 && u2ExclusiveGolds && u2ExclusiveGolds.length > 0) {
+    if (u1NameSpan) u1NameSpan.textContent = u1Name;
+    if (u2NameSpan) u2NameSpan.textContent = u2Name;
+
+    exclusiveGoldsBody.innerHTML = u2ExclusiveGolds.map(g => {
+      const holeUrl = `https://code.golf/${encodeURIComponent(g.hole)}`;
+      const langUrl = `https://code.golf/${encodeURIComponent(g.hole)}#${encodeURIComponent(g.lang)}`;
+      
+      return `
+        <tr>
+          <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(g.hole)}</strong></a></td>
+          <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(g.lang)}</a></td>
+          <td style="text-align: right;"><span class="medal">${g.medal}</span></td>
+          <td style="text-align: right;"><strong>${g.byte.toLocaleString()}</strong></td>
+          <td style="text-align: right;">${g.goldHolders.toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+    
+    if (exclusiveGoldsCard) exclusiveGoldsCard.classList.remove('hidden');
+  } else {
+    if (exclusiveGoldsCard) exclusiveGoldsCard.classList.add('hidden');
+  }
 }
 
 function sortAndRenderCompareTable(rows, sortField, sortDir, hasUser2, scoringMode, u1Name, u2Name) {
@@ -1617,46 +1618,51 @@ function sortLeaderboardData(results, sortField = 'points', sortDir = 'desc') {
       return sortDir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     }
     else if (sortField === 'holes') { valA = a.holes; valB = b.holes; }
-    else if (sortField === 'diamonds') { valA = a.diamondContrib; valB = b.diamondContrib; }
     else if (sortField === 'points') { valA = a.points; valB = b.points; }
+    else if (sortField === 'diamonds') { 
+      valA = a.diamondContrib; valB = b.diamondContrib;
+      if (valA === valB) {
+        valA = a.diamonds; valB = b.diamonds;
+      }
+    }
     else if (sortField === 'bytes') { valA = a.bytes; valB = b.bytes; }
     else if (sortField === 'change') { valA = a.rankChange; valB = b.rankChange; }
     else { valA = a.points; valB = b.points; }
 
     if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
-    if (b.points !== a.points) return b.points - a.points;
-    return a.bytes - b.bytes;
+
+    if (sortField === 'points') return a.bytes - b.bytes;
+    if (sortField === 'bytes') return b.points - a.points;
+    return a.name.localeCompare(b.name);
   });
 }
 
-function renderLeaderboard(results) {
-  const sortedResults = sortLeaderboardData(results, currentLbSortField, currentLbSortDir);
+function renderLeaderboard(leaderboard) {
+  const lbResultsCard = document.getElementById('lbResultsCard');
+  const lbResultsBody = document.getElementById('lbResultsBody');
 
   const thead = document.querySelector('#lbResultsTable thead');
   if (thead) {
-    const rankArrow = currentLbSortField === 'rank' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const nameArrow = currentLbSortField === 'name' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const holesArrow = currentLbSortField === 'holes' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    const pointsArrow = currentLbSortField === 'points' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    const diamondsArrow = currentLbSortField === 'diamonds' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    const bytesArrow = currentLbSortField === 'bytes' ? (currentLbSortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const changeArrow = currentLbSortField === 'change' ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-
-    const thStyle = (f) => `cursor: pointer; user-select: none; color: ${currentLbSortField === f ? '#38bdf8' : 'inherit'};`;
+    const renderTh = (id, label, fieldName, align = 'left') => {
+      const isCurrent = currentLbSortField === fieldName;
+      const arrow = isCurrent ? (currentLbSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+      return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+    };
 
     thead.innerHTML = `
       <tr>
-        <th id="thLbRank" style="${thStyle('rank')}">#${rankArrow}</th>
-        <th id="thLbName" style="${thStyle('name')}">Name${nameArrow}</th>
-        <th id="thLbHoles" style="${thStyle('holes')}">Holes${holesArrow}</th>
-        <th id="thLbPoints" style="text-align: right; ${thStyle('points')}">Points${pointsArrow}</th>
-        <th id="thLbDiamonds" style="text-align: right; ${thStyle('diamonds')}">💎${diamondsArrow}</th>
-        <th id="thLbBytes" style="text-align: right; ${thStyle('bytes')}">Bytes${bytesArrow}</th>
-        <th id="thLbChange" style="text-align: right; ${thStyle('change')}">+/-${changeArrow}</th>
+        ${renderTh('thLBRank', '#', 'rank')}
+        ${renderTh('thLBName', 'Name', 'name')}
+        ${renderTh('thLBHoles', 'Holes', 'holes')}
+        ${renderTh('thLBPoints', 'Points', 'points', 'right')}
+        ${renderTh('thLBDiamonds', '💎', 'diamonds', 'right')}
+        ${renderTh('thLBBytes', 'Bytes', 'bytes', 'right')}
+        ${renderTh('thLBChange', '+/-', 'change', 'right')}
       </tr>
     `;
 
-    const bindLbSort = (id, fieldName, defaultDir = 'desc') => {
+    const bindLBSort = (id, fieldName, defaultDir = 'desc') => {
       const el = document.getElementById(id);
       el?.addEventListener('click', () => {
         if (currentLbSortField === fieldName) {
@@ -1669,64 +1675,55 @@ function renderLeaderboard(results) {
       });
     };
 
-    bindLbSort('thLbRank', 'rank', 'asc');
-    bindLbSort('thLbName', 'name', 'asc');
-    bindLbSort('thLbHoles', 'holes', 'desc');
-    bindLbSort('thLbPoints', 'points', 'desc');
-    bindLbSort('thLbDiamonds', 'diamonds', 'desc');
-    bindLbSort('thLbBytes', 'bytes', 'asc');
-    bindLbSort('thLbChange', 'change', 'desc');
+    bindLBSort('thLBRank', 'rank', 'asc');
+    bindLBSort('thLBName', 'name', 'asc');
+    bindLBSort('thLBHoles', 'holes', 'desc');
+    bindLBSort('thLBPoints', 'points', 'desc');
+    bindLBSort('thLBDiamonds', 'diamonds', 'desc');
+    bindLBSort('thLBBytes', 'bytes', 'asc');
+    bindLBSort('thLBChange', 'change', 'desc');
   }
 
-  const tbody = document.getElementById('lbResultsBody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
+  const sortedLeaderboard = sortLeaderboardData(leaderboard, currentLbSortField, currentLbSortDir);
+  lbResultsBody.innerHTML = '';
 
-  sortedResults.forEach((row) => {
+  sortedLeaderboard.forEach(r => {
     const tr = document.createElement('tr');
-    const changeVal = row.rankChange;
-    const changeSign = changeVal > 0 ? `+${changeVal}` : `${changeVal}`;
-    const diffClass = changeVal > 0 ? 'diff-pos' : changeVal < 0 ? 'diff-neg' : 'diff-zero';
+
+    const rankChangeClass = r.rankChange > 0 ? 'diff-pos' : r.rankChange < 0 ? 'diff-neg' : 'diff-zero';
+    const rankChangeText = r.rankChange > 0 ? `+${r.rankChange}` : r.rankChange === 0 ? '-' : r.rankChange;
+
+    const pointsDisplay = `<strong>${r.points.toLocaleString()}</strong>`;
 
     tr.innerHTML = `
-      <td><strong>${row.standardRank}</strong></td>
-      <td><strong>${getGolferLink(row.name)}</strong></td>
-      <td>${row.holes.toLocaleString()}</td>
-      <td style="text-align: right;"><strong>${row.points.toLocaleString()}</strong></td>
-      <td style="text-align: right;">${row.diamondContrib.toLocaleString()}</td>
-      <td style="text-align: right;">${row.bytes.toLocaleString()}</td>
-      <td style="text-align: right;" class="${diffClass}"><strong>${changeSign}</strong></td>
+      <td>${r.standardRank}</td>
+      <td>${getGolferLink(r.name)}</td>
+      <td>${r.holes}</td>
+      <td style="text-align: right;">${pointsDisplay}</td>
+      <td style="text-align: right;">${r.diamondContrib.toLocaleString()}</td>
+      <td style="text-align: right;">${r.bytes.toLocaleString()}</td>
+      <td style="text-align: right;" class="${rankChangeClass}">${rankChangeText}</td>
     `;
-    tbody.appendChild(tr);
+    lbResultsBody.appendChild(tr);
   });
 
-  document.getElementById('lbResultsCard')?.classList.remove('hidden');
+  lbResultsCard.classList.remove('hidden');
 }
 
-// Export Leaderboard Markdown
 document.getElementById('exportLbTxtBtn')?.addEventListener('click', () => {
-  if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) {
-    alert("No leaderboard data to export!");
-    return;
-  }
+  if (!lastLeaderboardResults || lastLeaderboardResults.length === 0) return;
+  const sortedRows = sortLeaderboardData(lastLeaderboardResults, currentLbSortField, currentLbSortDir);
+  const headers = ['#', 'Name', 'Holes', 'Points', 'Diamonds', 'Bytes', '+/-'];
+  const rightAlignCols = [3, 4, 5, 6];
 
-  const mdContent = generateLeaderboardMarkdownTable(lastLeaderboardResults, currentLbSortField, currentLbSortDir);
-  downloadMarkdownFile('leaderboard.md', mdContent);
-});
-
-function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir = 'desc') {
-  const sortedResults = sortLeaderboardData(results, sortField, sortDir);
-  const headers = ['#', 'golfer', 'holes', 'points', '💎', 'bytes', '+/-'];
-  const rightAlignCols = [0, 2, 3, 4, 5, 6];
-  
-  const tableRows = sortedResults.map((row) => [
-    String(row.standardRank),
-    row.name,
-    row.holes.toLocaleString(),
-    row.points.toLocaleString(),
-    row.diamondContrib.toLocaleString(),
-    row.bytes.toLocaleString(),
-    row.rankChange > 0 ? `+${row.rankChange}` : String(row.rankChange)
+  const tableRows = sortedRows.map(r => [
+    String(r.standardRank),
+    r.name,
+    String(r.holes),
+    r.points.toLocaleString(),
+    r.diamondContrib.toLocaleString(),
+    r.bytes.toLocaleString(),
+    r.rankChange > 0 ? `+${r.rankChange}` : r.rankChange === 0 ? '-' : String(r.rankChange)
   ]);
 
   const colWidths = headers.map((header, colIdx) => {
@@ -1755,27 +1752,32 @@ function generateLeaderboardMarkdownTable(results, sortField = 'points', sortDir
   });
   const separatorLine = `| ${separatorCells.join(' | ')} |`;
   const dataLines = tableRows.map(r => formatRow(r));
+  const mdContent = [headerLine, separatorLine, ...dataLines].join('\n');
 
-  return [headerLine, separatorLine, ...dataLines].join('\n');
-}
+  downloadMarkdownFile('custom_leaderboard.md', mdContent);
+});
 
 // ==========================================
-// PAGE 3: Solutions Query Logic (Bytes Only)
+// PAGE 3: Query Solutions Logic
 // ==========================================
 document.getElementById('queryGoBtn')?.addEventListener('click', async () => {
-  const queryType = document.getElementById('queryTypeSelect')?.value || 'longest_golds';
-
+  const queryType = document.getElementById('queryTypeSelect')?.value;
   const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
   const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
+
+  if (!queryType) {
+    alert("Please select a query type.");
+    return;
+  }
 
   showLoading();
   await new Promise(r => setTimeout(r, 50));
 
   try {
     const submissionsData = await getSubmissionsData(subFileInput);
-
+    
     if (!submissionsData) {
       hideLoading();
       handleSolutionsDownload();
@@ -1787,28 +1789,18 @@ document.getElementById('queryGoBtn')?.addEventListener('click', async () => {
       getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json')
     ]);
 
-    lastQueryResults = processQueryData(
-      submissionsData,
-      holesData,
-      langsData,
-      includeExperimental,
-      queryType
+    lastQueryResults = runSolutionsQuery(
+      submissionsData, 
+      queryType, 
+      holesData, 
+      langsData, 
+      includeExperimental
     );
-
+    
     currentQuerySortField = 'bytes';
     currentQuerySortDir = 'desc';
-
-    const titleEl = document.getElementById('queryResultsTitle');
-    if (titleEl) {
-      const typeNames = {
-        'longest_golds': 'Longest Bytes Golds',
-        'longest_diamonds': 'Longest Bytes Diamonds',
-        'longest_unicorns': 'Longest Bytes Unicorns'
-      };
-      titleEl.textContent = `${typeNames[queryType] || 'Query Results'} (${lastQueryResults.length.toLocaleString()})`;
-    }
-
-    renderQueryResults(lastQueryResults);
+    
+    renderQueryResults(lastQueryResults, queryType);
   } catch (err) {
     alert(err.message);
   } finally {
@@ -1816,13 +1808,9 @@ document.getElementById('queryGoBtn')?.addEventListener('click', async () => {
   }
 });
 
-/**
- * Processes solutions for BYTES scoring only.
- * - Gold: shortest solution in a lang/combo pair
- * - Diamond: uncontested gold (only 1 golfer at shortest solution length)
- * - Unicorn: diamond where that solution is the only solution in a lang/combo pair
- */
-function processQueryData(jsonData, holesJson, langsJson, includeExperimental, queryType) {
+function runSolutionsQuery(jsonData, queryType, holesJson, langsJson, includeExperimental) {
+  const holeLangUsers = new Map();
+
   let validHoles = null;
   if (holesJson && Array.isArray(holesJson)) {
     validHoles = new Set(
@@ -1841,9 +1829,6 @@ function processQueryData(jsonData, holesJson, langsJson, includeExperimental, q
     );
   }
 
-  // Aggregate user solutions per hole::lang pair (Bytes only)
-  const comboMap = new Map();
-
   for (const x of jsonData) {
     if (x.scoring !== "bytes") continue;
 
@@ -1856,126 +1841,142 @@ function processQueryData(jsonData, holesJson, langsJson, includeExperimental, q
     if (validLangs && !validLangs.has(lang)) continue;
 
     const key = `${hole}::${lang}`;
-    if (!comboMap.has(key)) {
-      comboMap.set(key, new Map());
+    if (!holeLangUsers.has(key)) {
+      holeLangUsers.set(key, []);
     }
-    const userMap = comboMap.get(key);
-    if (!userMap.has(login) || byte < userMap.get(login)) {
-      userMap.set(login, byte);
-    }
+    holeLangUsers.get(key).push({ login, byte });
   }
 
   const results = [];
+  let totalGolds = 0;
+  let totalDiamonds = 0;
+  let totalUnicorns = 0;
 
-  for (const [key, userMap] of comboMap.entries()) {
+  for (const [key, users] of holeLangUsers.entries()) {
     const parts = key.split("::");
     const hole = parts[0];
     const lang = parts[1];
 
-    const solvers = Array.from(userMap.entries()).map(([login, byte]) => ({ login, byte }));
-    if (solvers.length === 0) continue;
+    users.sort((a, b) => a.byte - b.byte);
+    if (users.length === 0) continue;
 
-    const totalSolvers = solvers.length;
-    let minBytes = Infinity;
-    for (const s of solvers) {
-      if (s.byte < minBytes) minBytes = s.byte;
+    const minByte = users[0].byte;
+    const tiedForFirst = users.filter(u => u.byte === minByte);
+
+    const isDiamond = tiedForFirst.length === 1;
+    const isUnicorn = isDiamond && users.length === 1;
+
+    if (isUnicorn) totalUnicorns++;
+    if (isDiamond) totalDiamonds++;
+    totalGolds += tiedForFirst.length;
+      
+    let typeLabel = '';
+    let shouldInclude = false;
+
+    if (queryType === 'longest_unicorns' && isUnicorn) {
+      shouldInclude = true;
+      typeLabel = '🦄 Unicorn';
+    } else if (queryType === 'longest_diamonds' && isDiamond) {
+      shouldInclude = true;
+      typeLabel = '💎 Diamond';
+    } else if (queryType === 'longest_golds') {
+      shouldInclude = true;
+      typeLabel = isDiamond ? '💎 Diamond' : `🥇 Gold (Tie: ${tiedForFirst.length})`;
     }
 
-    const minSolvers = solvers.filter(s => s.byte === minBytes);
-    const tiedCount = minSolvers.length;
-
-    const isDiamond = tiedCount === 1;
-    const isUnicorn = isDiamond && totalSolvers === 1;
-
-    minSolvers.forEach(solver => {
-      let matchesQuery = false;
-      let medalType = "🥇 Gold";
-
-      if (isUnicorn) {
-        medalType = "🦄 Unicorn";
-      } else if (isDiamond) {
-        medalType = "💎 Diamond";
-      }
-
-      if (queryType === "longest_unicorns") {
-        if (isUnicorn) matchesQuery = true;
-      } else if (queryType === "longest_diamonds") {
-        if (isDiamond) matchesQuery = true;
-      } else if (queryType === "longest_golds") {
-        matchesQuery = true; // All minSolvers are golds
-      }
-
-      if (matchesQuery) {
+    if (shouldInclude) {
+      tiedForFirst.forEach(winner => {
         results.push({
           hole,
           lang,
-          login: solver.login,
-          bytes: solver.byte,
-          totalSolvers,
-          tiedCount,
-          isUnicorn,
-          isDiamond,
-          medalType
+          golfer: winner.login,
+          bytes: winner.byte,
+          type: typeLabel
         });
-      }
-    });
+      });
+    }
   }
 
-  return results;
+  return {
+    results,
+    totalGolds,
+    totalDiamonds,
+    totalUnicorns
+  };
 }
 
-function sortQueryData(results, sortField = 'bytes', sortDir = 'desc') {
+function sortQueryData(results, sortField, sortDir) {
   return [...results].sort((a, b) => {
     let valA, valB;
-    if (sortField === 'bytes') { valA = a.bytes; valB = b.bytes; }
-    else if (sortField === 'hole') { return sortDir === 'asc' ? a.hole.localeCompare(b.hole) : b.hole.localeCompare(a.hole); }
-    else if (sortField === 'lang') { return sortDir === 'asc' ? a.lang.localeCompare(b.lang) : b.lang.localeCompare(a.lang); }
-    else if (sortField === 'login') { return sortDir === 'asc' ? a.login.localeCompare(b.login) : b.login.localeCompare(a.login); }
-    else if (sortField === 'type') { return sortDir === 'asc' ? a.medalType.localeCompare(b.medalType) : b.medalType.localeCompare(a.medalType); }
-    else { valA = a.bytes; valB = b.bytes; }
+    if (sortField === 'hole') {
+      return sortDir === 'asc' ? a.hole.localeCompare(b.hole) : b.hole.localeCompare(a.hole);
+    } else if (sortField === 'lang') {
+      return sortDir === 'asc' ? a.lang.localeCompare(b.lang) : b.lang.localeCompare(a.lang);
+    } else if (sortField === 'golfer') {
+      return sortDir === 'asc' ? a.golfer.localeCompare(b.golfer) : b.golfer.localeCompare(a.golfer);
+    } else if (sortField === 'bytes') {
+      valA = a.bytes; valB = b.bytes;
+    } else if (sortField === 'type') {
+      return sortDir === 'asc' ? a.type.localeCompare(b.type) : b.type.localeCompare(a.type);
+    } else {
+      valA = a.bytes; valB = b.bytes;
+    }
 
     if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
-    return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang) || a.login.localeCompare(b.login);
+    return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang);
   });
 }
 
-function renderQueryResults(results) {
-  const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
-  let filtered = results;
-  if (filterText) {
-    filtered = results.filter(r =>
-      r.hole.toLowerCase().includes(filterText) ||
-      r.lang.toLowerCase().includes(filterText) ||
-      r.login.toLowerCase().includes(filterText)
-    );
+function renderQueryResults(queryData, queryType) {
+  const queryResultsCard = document.getElementById('queryResultsCard');
+  const queryResultsTitle = document.getElementById('queryResultsTitle');
+  const queryStatsContainer = document.getElementById('queryStatsContainer');
+  const thead = document.querySelector('#queryResultsTable thead');
+
+  const titleMap = {
+    'longest_golds': 'Longest BYTES Golds',
+    'longest_diamonds': 'Longest BYTES Diamonds',
+    'longest_unicorns': 'Longest BYTES Unicorns'
+  };
+  queryResultsTitle.textContent = `${titleMap[queryType] || 'Query Results'} (Top 100)`;
+
+  if (queryStatsContainer) {
+    queryStatsContainer.innerHTML = `
+      <div class="stat-box">
+        <div class="val">${queryData.totalGolds.toLocaleString()}</div>
+        <div class="lbl">🥇 Total Golds</div>
+      </div>
+      <div class="stat-box">
+        <div class="val">${queryData.totalDiamonds.toLocaleString()}</div>
+        <div class="lbl">💎 Total Diamonds</div>
+      </div>
+      <div class="stat-box">
+        <div class="val">${queryData.totalUnicorns.toLocaleString()}</div>
+        <div class="lbl">🦄 Total Unicorns</div>
+      </div>
+    `;
   }
 
-  const sortedResults = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
-  
-  // --- CAP TO TOP 500 TO PREVENT DOM LAG ---
-  const displayResults = sortedResults.slice(0, 500);
-
-  const thead = document.querySelector('#queryResultsTable thead');
   if (thead) {
-    const thStyle = (f) => `cursor: pointer; user-select: none; color: ${currentQuerySortField === f ? '#38bdf8' : 'inherit'};`;
-    const holeArrow = currentQuerySortField === 'hole' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const langArrow = currentQuerySortField === 'lang' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const loginArrow = currentQuerySortField === 'login' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const bytesArrow = currentQuerySortField === 'bytes' ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    const typeArrow = currentQuerySortField === 'type' ? (currentQuerySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const renderTh = (id, label, fieldName, align = 'left') => {
+      const isCurrent = currentQuerySortField === fieldName;
+      const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+      return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+    };
 
     thead.innerHTML = `
       <tr>
-        <th>#</th>
-        <th id="thQueryHole" style="${thStyle('hole')}">Hole${holeArrow}</th>
-        <th id="thQueryLang" style="${thStyle('lang')}">Language${langArrow}</th>
-        <th id="thQueryLogin" style="${thStyle('login')}">Golfer${loginArrow}</th>
-        <th id="thQueryBytes" style="text-align: right; ${thStyle('bytes')}">Bytes${bytesArrow}</th>
-        <th id="thQueryType" style="text-align: right; ${thStyle('type')}">Type${typeArrow}</th>
+        <th style="width: 40px; color: var(--text-dim);">#</th>
+        ${renderTh('thQueryHole', 'Hole', 'hole')}
+        ${renderTh('thQueryLang', 'Language', 'lang')}
+        ${renderTh('thQueryGolfer', 'Golfer', 'golfer')}
+        ${renderTh('thQueryBytes', 'Bytes', 'bytes', 'right')}
+        ${renderTh('thQueryType', 'Type', 'type', 'right')}
       </tr>
     `;
 
-    const bindQuerySort = (id, fieldName, defaultDir = 'desc') => {
+    const bindSort = (id, fieldName, defaultDir = 'desc') => {
       const el = document.getElementById(id);
       el?.addEventListener('click', () => {
         if (currentQuerySortField === fieldName) {
@@ -1984,80 +1985,88 @@ function renderQueryResults(results) {
           currentQuerySortField = fieldName;
           currentQuerySortDir = defaultDir;
         }
-        renderQueryResults(lastQueryResults);
+        applyQueryFilterAndRender();
       });
     };
 
-    bindQuerySort('thQueryHole', 'hole', 'asc');
-    bindQuerySort('thQueryLang', 'lang', 'asc');
-    bindQuerySort('thQueryLogin', 'login', 'asc');
-    bindQuerySort('thQueryBytes', 'bytes', 'desc');
-    bindQuerySort('thQueryType', 'type', 'asc');
+    bindSort('thQueryHole', 'hole', 'asc');
+    bindSort('thQueryLang', 'lang', 'asc');
+    bindSort('thQueryGolfer', 'golfer', 'asc');
+    bindSort('thQueryBytes', 'bytes', 'desc');
+    bindSort('thQueryType', 'type', 'asc');
   }
 
-  const tbody = document.getElementById('queryResultsBody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  // Render only the top 500 capped items
-  displayResults.forEach((row, index) => {
-    const tr = document.createElement('tr');
-    const holeUrl = `https://code.golf/${encodeURIComponent(row.hole)}`;
-    const langUrl = `https://code.golf/${encodeURIComponent(row.hole)}#${encodeURIComponent(row.lang)}`;
-
-    tr.innerHTML = `
-      <td>${index + 1}</td>
-      <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(row.hole)}</strong></a></td>
-      <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; font-weight: bold;">${escapeHtml(row.lang)}</a></td>
-      <td>${getGolferLink(row.login)}</td>
-      <td style="text-align: right;"><strong>${row.bytes.toLocaleString()}</strong></td>
-      <td style="text-align: right;">${row.medalType}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  document.getElementById('queryResultsCard')?.classList.remove('hidden');
+  applyQueryFilterAndRender();
+  queryResultsCard.classList.remove('hidden');
 }
 
-document.getElementById('queryTableSearch')?.addEventListener('input', () => {
-  if (lastQueryResults && lastQueryResults.length > 0) {
-    renderQueryResults(lastQueryResults);
-  }
-});
-
-document.getElementById('exportQueryTxtBtn')?.addEventListener('click', () => {
-  if (!lastQueryResults || lastQueryResults.length === 0) {
-    alert("No query data to export!");
-    return;
-  }
-
+function applyQueryFilterAndRender() {
+  const queryResultsBody = document.getElementById('queryResultsBody');
   const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
-  let filtered = lastQueryResults;
+  
+  let filtered = lastQueryResults.results || [];
+  
   if (filterText) {
-    filtered = lastQueryResults.filter(r =>
-      r.hole.toLowerCase().includes(filterText) ||
+    filtered = filtered.filter(r => 
+      r.hole.toLowerCase().includes(filterText) || 
       r.lang.toLowerCase().includes(filterText) ||
-      r.login.toLowerCase().includes(filterText)
+      r.golfer.toLowerCase().includes(filterText)
     );
   }
 
-  const sorted = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
-  const queryTypeSel = document.getElementById('queryTypeSelect')?.value || 'query';
-  const mdContent = generateQueryMarkdownTable(sorted);
-  downloadMarkdownFile(`${queryTypeSel}_results.md`, mdContent);
+  let sorted = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
+  const limitedResults = sorted.slice(0, 100);
+
+  queryResultsBody.innerHTML = '';
+  limitedResults.forEach((r, index) => {
+    const tr = document.createElement('tr');
+    
+    const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
+    const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a>`;
+    const langDisplay = formatLangDisplay(r.hole, r.lang);
+    const golferDisplay = getGolferLink(r.golfer);
+
+    tr.innerHTML = `
+      <td style="color: var(--text-dim);">${index + 1}</td>
+      <td>${holeDisplay}</td>
+      <td>${langDisplay}</td>
+      <td>${golferDisplay}</td>
+      <td style="text-align: right;"><strong>${r.bytes.toLocaleString()}</strong></td>
+      <td style="text-align: right; color: var(--text-dim);">${escapeHtml(r.type)}</td>
+    `;
+    queryResultsBody.appendChild(tr);
+  });
+}
+
+document.getElementById('queryTableSearch')?.addEventListener('input', () => {
+  if (lastQueryResults) applyQueryFilterAndRender();
 });
 
-function generateQueryMarkdownTable(results) {
-  const headers = ['#', 'hole', 'language', 'golfer', 'bytes', 'type'];
-  const rightAlignCols = [0, 4, 5];
+document.getElementById('exportQueryTxtBtn')?.addEventListener('click', () => {
+  if (!lastQueryResults || !lastQueryResults.results || lastQueryResults.results.length === 0) return;
+  
+  const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+  let filtered = lastQueryResults.results;
+  
+  if (filterText) {
+    filtered = filtered.filter(r => 
+      r.hole.toLowerCase().includes(filterText) || 
+      r.lang.toLowerCase().includes(filterText) ||
+      r.golfer.toLowerCase().includes(filterText)
+    );
+  }
 
-  const tableRows = results.map((row, idx) => [
-    String(idx + 1),
-    row.hole,
-    row.lang,
-    row.login,
-    row.bytes.toLocaleString(),
-    row.medalType
+  const sortedRows = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir).slice(0, 100);
+  const headers = ['#', 'Hole', 'Language', 'Golfer', 'Bytes', 'Type'];
+  const rightAlignCols = [4, 5];
+
+  const tableRows = sortedRows.map((r, i) => [
+    String(i + 1),
+    r.hole,
+    r.lang,
+    r.golfer,
+    r.bytes.toLocaleString(),
+    r.type
   ]);
 
   const colWidths = headers.map((header, colIdx) => {
@@ -2086,71 +2095,89 @@ function generateQueryMarkdownTable(results) {
   });
   const separatorLine = `| ${separatorCells.join(' | ')} |`;
   const dataLines = tableRows.map(r => formatRow(r));
+  const mdContent = [headerLine, separatorLine, ...dataLines].join('\n');
 
-  return [headerLine, separatorLine, ...dataLines].join('\n');
-}
+  const queryType = document.getElementById('queryTypeSelect')?.value || 'query';
+  downloadMarkdownFile(`${queryType}_results_top100.md`, mdContent);
+});
 
-// --- Universal Numeric Control Setup (Sliders + Prompts) ---
-function setupSliderControl(valueElId, sliderElId, minVal = 0, maxVal = 1000, autoUpdate = true, isInfinityMax = false) {
-  const valueEl = document.getElementById(valueElId);
-  const sliderEl = document.getElementById(sliderElId);
+// Slider Setup & Updates
+function setupSlider(sliderId, valueId, onUpdate) {
+  const slider = document.getElementById(sliderId);
+  const valueDisplay = document.getElementById(valueId);
+  if (!slider || !valueDisplay) return;
 
-  if (!valueEl || !sliderEl) return;
-
-  const formatVal = (val) => {
-    const num = parseFloat(val);
-    if (isInfinityMax && num >= maxVal) return '∞';
-    return num;
+  const getDisplayVal = (val) => {
+    if (sliderId.includes('lambda') && parseInt(val, 10) >= 1000) return '∞';
+    return val;
   };
 
-  const handleUpdate = () => {
-    if (!autoUpdate) return;
-
-    if (leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
-      if (lastLeaderboardResults && lastLeaderboardResults.length > 0) {
-        updateLeaderboardScoresAndRanks();
-        renderLeaderboard(lastLeaderboardResults);
-      }
-    } else {
-      if (lastCompareResults) {
-        updateCompareScores();
-        renderCompareResults(lastCompareResults);
-      }
-    }
-  };
-
-  sliderEl.addEventListener('input', (e) => {
-    valueEl.textContent = formatVal(e.target.value);
-    handleUpdate();
+  slider.addEventListener('input', (e) => {
+    valueDisplay.textContent = getDisplayVal(e.target.value);
   });
 
-  const clickTarget = valueEl.closest('label') || valueEl.parentElement || valueEl;
+  slider.addEventListener('change', (e) => {
+    valueDisplay.textContent = getDisplayVal(e.target.value);
+    if (onUpdate) onUpdate();
+  });
 
-  clickTarget.addEventListener('click', (e) => {
-    if (e.target === sliderEl) return;
-    const currentVal = sliderEl.value;
-    const input = prompt(`Enter manual value (${minVal} to ${maxVal}):`, currentVal);
+  valueDisplay.parentElement.addEventListener('click', () => {
+    let currentVal = slider.value;
+    if (sliderId.toLowerCase().includes('lambda') && parseInt(currentVal, 10) >= 1000) currentVal = '∞';
 
-    if (input !== null) {
+    const input = prompt(`Enter a new value for ${sliderId.replace('Slider', '')} (${slider.min} - ${slider.max}):`, currentVal);
+    if (input !== null && input !== "") {
       const num = parseFloat(input);
-      if (!isNaN(num) && num >= minVal && num <= maxVal) {
-        sliderEl.value = num;
-        valueEl.textContent = formatVal(num);
-        handleUpdate();
+      if (!isNaN(num) && num >= parseFloat(slider.min) && num <= parseFloat(slider.max)) {
+        slider.value = num;
+        valueDisplay.textContent = getDisplayVal(num);
+        if (onUpdate) onUpdate();
       } else {
-        alert(`Please enter a valid number between ${minVal} and ${maxVal}.`);
+        alert(`Invalid input. Please enter a number between ${slider.min} and ${slider.max}.`);
       }
     }
   });
 }
 
-// Initialize controls
-setupSliderControl('chiValue', 'chiSlider', 1, 30, true);
-setupSliderControl('lambdaValue', 'lambdaSlider', 1, 1000, true, true);
-setupSliderControl('diamondValue', 'diamondSlider', 0, 30, true);
-setupSliderControl('formulaValue', 'formulaSlider', 1, 1000, false);
+// Attach listeners to sliders
+const updateCompare = () => {
+  if (lastCompareResults && document.getElementById('comparePage') && !document.getElementById('comparePage').classList.contains('hidden')) {
+    updateCompareScores();
+    renderCompareResults(lastCompareResults);
+  }
+};
+const updateLeaderboard = () => {
+  if (lastLeaderboardResults && lastLeaderboardResults.length > 0 && document.getElementById('leaderboardPage') && !document.getElementById('leaderboardPage').classList.contains('hidden')) {
+    updateLeaderboardScoresAndRanks();
+    renderLeaderboard(lastLeaderboardResults);
+  }
+};
 
-setupSliderControl('lbChiValue', 'lbChiSlider', 1, 30, true);
-setupSliderControl('lbLambdaValue', 'lbLambdaSlider', 1, 1000, true, true);
-setupSliderControl('lbDiamondValue', 'lbDiamondSlider', 0, 30, true);
-setupSliderControl('lbFormulaValue', 'lbFormulaSlider', 1, 1000, false);
+document.addEventListener('DOMContentLoaded', () => {
+  const lbLambdaSlider = document.getElementById('lbLambdaSlider');
+  const lbLambdaValue = document.getElementById('lbLambdaValue');
+
+  if (lbLambdaSlider && lbLambdaValue) {
+    lbLambdaSlider.addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      lbLambdaValue.textContent = val >= 1000 ? '∞' : val;
+    });
+  }
+});
+
+// Compare Sliders
+setupSlider('formulaSlider', 'formulaValue', () => document.getElementById('goBtn')?.click());
+setupSlider('chiSlider', 'chiValue', updateCompare);
+setupSlider('lambdaSlider', 'lambdaValue', updateCompare);
+setupSlider('diamondSlider', 'diamondValue', updateCompare);
+
+// Leaderboard Sliders
+setupSlider('lbFormulaSlider', 'lbFormulaValue', () => document.getElementById('lbGoBtn')?.click());
+setupSlider('lbChiSlider', 'lbChiValue', updateLeaderboard);
+setupSlider('lbLambdaSlider', 'lbLambdaValue', updateLeaderboard);
+setupSlider('lbDiamondSlider', 'lbDiamondValue', updateLeaderboard);
+
+// Wait for DOM
+document.addEventListener('DOMContentLoaded', () => {
+  if (initialModal) initialModal.classList.remove('hidden');
+});
