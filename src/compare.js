@@ -443,7 +443,7 @@ function updateCompareScores() {
   const u2RawScores = lastCompareResults.rows.map(r => r.u2AllLangs && r.u2AllLangs.length > 0 ? Math.max(...r.u2AllLangs.map(c => c.point), 0) : 0);
 
   const u1RawBaseScore = Math.round(calculateHolePowerMean(u1RawScores, totalHoles, 1));
-  const u2RawBaseScore = hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
+  const u2RawBaseScore = lastCompareResults.hasUser2 ? Math.round(calculateHolePowerMean(u2RawScores, totalHoles, 1)) : 0;
 
   lastCompareResults.u1TotalScore = u1BaseScore + Math.round(lastCompareResults.u1Diamonds * diamondBonus);
   lastCompareResults.u1RawTotalScore = u1RawBaseScore;

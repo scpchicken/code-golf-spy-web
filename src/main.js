@@ -89,12 +89,14 @@ function setupSlider(sliderId, valueId, onUpdate) {
   if (!slider || !valueDisplay) return;
 
   const getDisplayVal = (val) => {
-    if (sliderId.includes('lambda') && parseInt(val, 10) >= 1000) return '∞';
+    if (sliderId.toLowerCase().includes('lambda') && parseInt(val, 10) >= 1000) return '∞';
     return val;
   };
 
+  // Trigger live score updates dynamically while dragging slider
   slider.addEventListener('input', (e) => {
     valueDisplay.textContent = getDisplayVal(e.target.value);
+    if (onUpdate) onUpdate();
   });
 
   slider.addEventListener('change', (e) => {
@@ -108,7 +110,11 @@ function setupSlider(sliderId, valueId, onUpdate) {
 
     const input = prompt(`Enter a new value for ${sliderId.replace('Slider', '')} (${slider.min} - ${slider.max}):`, currentVal);
     if (input !== null && input !== "") {
-      const num = parseFloat(input);
+      let rawVal = input.trim();
+      if (sliderId.toLowerCase().includes('lambda') && (rawVal === '∞' || rawVal.toLowerCase() === 'inf' || rawVal.toLowerCase() === 'infinity')) {
+        rawVal = slider.max;
+      }
+      const num = parseFloat(rawVal);
       if (!isNaN(num) && num >= parseFloat(slider.min) && num <= parseFloat(slider.max)) {
         slider.value = num;
         valueDisplay.textContent = getDisplayVal(num);
@@ -120,44 +126,44 @@ function setupSlider(sliderId, valueId, onUpdate) {
   });
 }
 
+// Live Score Recalculations for Compare Users Tab
 const updateCompare = () => {
-  if (lastCompareResults && comparePage && !comparePage.classList.contains('hidden')) {
+  if (typeof updateCompareScores === 'function') {
     updateCompareScores();
-    renderCompareResults(lastCompareResults);
+  }
+  const data = typeof lastCompareResults !== 'undefined' ? lastCompareResults : (typeof lastCompareData !== 'undefined' ? lastCompareData : null);
+  if (typeof renderCompareResults === 'function' && data) {
+    renderCompareResults(data);
   }
 };
 
+// Live Score Recalculations for Custom Leaderboard Tab
 const updateLeaderboard = () => {
-  if (lastLeaderboardResults && lastLeaderboardResults.length > 0 && leaderboardPage && !leaderboardPage.classList.contains('hidden')) {
+  if (typeof updateLeaderboardScoresAndRanks === 'function') {
     updateLeaderboardScoresAndRanks();
-    renderLeaderboard(lastLeaderboardResults);
+  }
+  const data = typeof lastLeaderboardResults !== 'undefined' ? lastLeaderboardResults : (typeof lastLeaderboardData !== 'undefined' ? lastLeaderboardData : null);
+  if (typeof renderLeaderboard === 'function' && data) {
+    renderLeaderboard(data);
   }
 };
 
 // Initialize Sliders & Startup Dialog
 document.addEventListener('DOMContentLoaded', () => {
-  const lbLambdaSlider = document.getElementById('lbLambdaSlider');
-  const lbLambdaValue = document.getElementById('lbLambdaValue');
-
-  if (lbLambdaSlider && lbLambdaValue) {
-    lbLambdaSlider.addEventListener('input', (e) => {
-      const val = Number(e.target.value);
-      lbLambdaValue.textContent = val >= 1000 ? '∞' : val;
-    });
-  }
-
-  // Compare Sliders
-  setupSlider('formulaSlider', 'formulaValue', () => document.getElementById('goBtn')?.click());
+  // Compare Sliders (Base Min Score is manual; Chi, Lambda, Diamond auto-update)
+  setupSlider('formulaSlider', 'formulaValue');
   setupSlider('chiSlider', 'chiValue', updateCompare);
   setupSlider('lambdaSlider', 'lambdaValue', updateCompare);
   setupSlider('diamondSlider', 'diamondValue', updateCompare);
 
-  // Leaderboard Sliders
-  setupSlider('lbFormulaSlider', 'lbFormulaValue', () => document.getElementById('lbGoBtn')?.click());
+  // Leaderboard Sliders (Base Min Score is manual; Chi, Lambda, Diamond auto-update)
+  setupSlider('lbFormulaSlider', 'lbFormulaValue');
   setupSlider('lbChiSlider', 'lbChiValue', updateLeaderboard);
   setupSlider('lbLambdaSlider', 'lbLambdaValue', updateLeaderboard);
   setupSlider('lbDiamondSlider', 'lbDiamondValue', updateLeaderboard);
 
   // Show Startup Modal
-  if (initialModal) initialModal.classList.remove('hidden');
+  if (typeof initialModal !== 'undefined' && initialModal) {
+    initialModal.classList.remove('hidden');
+  }
 });
