@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -365,7 +366,25 @@
               <option value="bytes_diamonds">Bytes Diamonds</option>
               <option value="bytes_unicorns">Bytes Unicorns</option>
               <option value="total_bytes_of_golds_per_day">Total BYTES of Golds Per Day</option>
+              <option value="lost_golds_diamonds">Lost Diamonds / Golds / Unicorns</option>
             </select>
+          </div>
+
+          <!-- Dynamic Lost Golds Filter Controls -->
+          <div id="lostGoldsControls" class="form-group hidden" style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+              <label for="lostGolferInput">Golfer Name (Who Lost - Optional)</label>
+              <input type="text" id="lostGolferInput" placeholder="e.g. scpchicken">
+            </div>
+            <div>
+              <label for="lostTypeSelect">Lost Record Type</label>
+              <select id="lostTypeSelect">
+                <option value="all">All Lost Records (Golds, Diamonds, Unicorns)</option>
+                <option value="diamonds">Lost Diamonds 💎 Only</option>
+                <option value="unicorns">Lost Unicorns 🦄 Only</option>
+                <option value="golds">Lost Golds 🥇 Only</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -377,18 +396,19 @@
       <!-- Query Results Card -->
       <div id="queryResultsCard" class="card hidden" style="margin-top: 1.5rem;">
         
-        <!-- NEW: Stats container for Golds, Diamonds, and Unicorns -->
+        <!-- Stats container for Golds, Diamonds, and Unicorns -->
         <div class="stats-row" id="queryStatsContainer" style="margin-bottom: 1.5rem;"></div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
-          <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results (Top 100)</h3>
+          <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results</h3>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <input type="text" id="queryTableSearch" class="search-bar" placeholder="Filter hole, lang, or golfer..." style="height: 38px;">
             <button id="exportQueryTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
           </div>
         </div>
 
-        <div style="overflow-x: auto;">
+        <!-- Single Table View (Standard Queries & Golds Per Day) -->
+        <div id="singleTableContainer" style="overflow-x: auto;">
           <table id="queryResultsTable" class="main-table">
             <thead>
               <tr>
@@ -403,6 +423,9 @@
             <tbody id="queryResultsBody"></tbody>
           </table>
         </div>
+
+        <!-- Multi-Table View (Lost Golds across 24h, Week, Month, Year) -->
+        <div id="multiTableContainer" class="hidden" style="display: flex; flex-direction: column; gap: 1.5rem;"></div>
       </div>
     </div>
   </div>

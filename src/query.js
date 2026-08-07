@@ -1,5 +1,6 @@
+// query.js
 /**
- * Page 3: Query Solutions Logic (Scoped IIFE to prevent global scope collisions)
+ * Page 3: Query Solutions Logic
  */
 
 (() => {
@@ -7,6 +8,10 @@
   let currentQuerySortField = 'bytes';
   let currentQuerySortDir = 'desc';
   let lastQueryResults = null;
+  let cachedSubmissionsData = null;
+  let cachedHolesData = null;
+  let cachedLangsData = null;
+  let cachedIncludeExperimental = false;
 
   // Safe HTML Escape Helper
   function escapeHtml(str) {
@@ -40,12 +45,27 @@
   // Attach event listeners safely after DOM is loaded
   function initQueryEvents() {
     const queryGoBtn = document.getElementById('queryGoBtn');
+    const queryTypeSelect = document.getElementById('queryTypeSelect');
+    const lostGoldsControls = document.getElementById('lostGoldsControls');
+    const lostGolferInput = document.getElementById('lostGolferInput');
+    const lostTypeSelect = document.getElementById('lostTypeSelect');
+
+    const toggleControls = () => {
+      if (queryTypeSelect?.value === 'lost_golds_diamonds') {
+        lostGoldsControls?.classList.remove('hidden');
+      } else {
+        lostGoldsControls?.classList.add('hidden');
+      }
+    };
+
+    queryTypeSelect?.addEventListener('change', toggleControls);
+    toggleControls();
+
     if (!queryGoBtn || queryGoBtn.dataset.initialized) return;
     queryGoBtn.dataset.initialized = 'true';
 
     queryGoBtn.addEventListener('click', async () => {
-      const typeSelect = document.getElementById('queryTypeSelect');
-      currentQueryType = typeSelect ? typeSelect.value : 'longest_golds';
+      currentQueryType = queryTypeSelect ? queryTypeSelect.value : 'longest_golds';
 
       const subFileInput = document.getElementById('submissionsFile');
       const holesFileInput = document.getElementById('holesFile');
@@ -69,11 +89,28 @@
           typeof getOrFetchJson === 'function' ? getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json') : null
         ]);
 
+        cachedSubmissionsData = submissionsData;
+        cachedHolesData = holesData;
+        cachedLangsData = langsData;
+        cachedIncludeExperimental = includeExperimental;
+
         if (currentQueryType === 'total_bytes_of_golds_per_day') {
           currentQuerySortField = 'date';
           currentQuerySortDir = 'desc';
           lastQueryResults = processGoldsPerDay(submissionsData, includeExperimental, holesData, langsData);
           renderGoldsPerDayResults();
+        } else if (currentQueryType === 'lost_golds_diamonds') {
+          const golferFilter = lostGolferInput?.value || '';
+          const medalTypeFilter = lostTypeSelect?.value || 'all';
+          lastQueryResults = processLostMedals(
+            submissionsData,
+            includeExperimental,
+            holesData,
+            langsData,
+            golferFilter,
+            medalTypeFilter
+          );
+          renderLostMedalsResults(lastQueryResults);
         } else if (isUserQueryType(currentQueryType)) {
           currentQuerySortField = 'count';
           currentQuerySortDir = 'desc';
@@ -104,10 +141,32 @@
       }
     });
 
+    // Real-time lost golds filter listeners
+    const triggerLostFilterUpdate = () => {
+      if (currentQueryType === 'lost_golds_diamonds' && cachedSubmissionsData) {
+        const golferFilter = lostGolferInput?.value || '';
+        const medalTypeFilter = lostTypeSelect?.value || 'all';
+        lastQueryResults = processLostMedals(
+          cachedSubmissionsData,
+          cachedIncludeExperimental,
+          cachedHolesData,
+          cachedLangsData,
+          golferFilter,
+          medalTypeFilter
+        );
+        renderLostMedalsResults(lastQueryResults);
+      }
+    };
+
+    lostGolferInput?.addEventListener('input', triggerLostFilterUpdate);
+    lostTypeSelect?.addEventListener('change', triggerLostFilterUpdate);
+
     // Search input dispatch
     document.getElementById('queryTableSearch')?.addEventListener('input', () => {
       if (currentQueryType === 'total_bytes_of_golds_per_day') {
         sortAndRenderGoldsPerDayBody();
+      } else if (currentQueryType === 'lost_golds_diamonds') {
+        triggerLostFilterUpdate();
       } else {
         if (lastQueryResults) applyQueryFilterAndRender();
       }
@@ -138,6 +197,29 @@
           if (rowData) {
             showUserMedalsModal(golferName, currentQueryType, rowData.items || []);
           }
+        }
+      }
+    });
+
+    // Event Delegation for Lost Medals Row Click
+    document.getElementById('multiTableContainer')?.addEventListener('click', (e) => {
+      if (currentQueryType !== 'lost_golds_diamonds' || !lastQueryResults) return;
+      if (e.target.tagName === 'A') return;
+
+      const row = e.target.closest('.lost-event-row');
+      if (row) {
+        const tf = row.getAttribute('data-timeframe');
+        const idx = parseInt(row.getAttribute('data-index'), 10);
+
+        let eventList = [];
+        if (tf === '24h') eventList = lastQueryResults.events24h;
+        else if (tf === 'week') eventList = lastQueryResults.eventsWeek;
+        else if (tf === 'month') eventList = lastQueryResults.eventsMonth;
+        else if (tf === 'year') eventList = lastQueryResults.eventsYear;
+
+        const eventData = eventList[idx];
+        if (eventData && typeof showLostMedalModal === 'function') {
+          showLostMedalModal(eventData);
         }
       }
     });
@@ -281,11 +363,15 @@
     const card = document.getElementById('queryResultsCard');
     const titleEl = document.getElementById('queryResultsTitle');
     const statsContainer = document.getElementById('queryStatsContainer');
+    const singleTableContainer = document.getElementById('singleTableContainer');
+    const multiTableContainer = document.getElementById('multiTableContainer');
     const table = document.getElementById('queryResultsTable');
 
     if (!card || !table) return;
 
     if (titleEl) titleEl.textContent = 'Total Bytes of Golds Per Day (Cumulative)';
+    if (singleTableContainer) singleTableContainer.classList.remove('hidden');
+    if (multiTableContainer) multiTableContainer.classList.add('hidden');
 
     if (statsContainer) {
       const totalDays = lastQueryResults.length;
@@ -428,43 +514,44 @@
       rowsHtml = solutions.map(s => {
         const holeUrl = `https://code.golf/${encodeURIComponent(s.hole)}`;
         const langUrl = `https://code.golf/${encodeURIComponent(s.hole)}#${encodeURIComponent(s.lang)}`;
-        const golferUrl = `https://code.golf/golfers/${encodeURIComponent(s.login)}`;
-
         const diffText = s.diff > 0 ? `+${s.diff} B` : `${s.diff} B`;
-        const diffColor = s.diff > 0 ? '#22c55e' : '#ef4444';
+        const diffClass = s.diff > 0 ? 'diff-pos' : s.diff < 0 ? 'diff-neg' : 'diff-zero';
+        const golferLink = typeof getGolferLink === 'function' ? getGolferLink(s.login) : escapeHtml(s.login);
 
         return `
           <tr>
             <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(s.hole)}</strong></a></td>
-            <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; font-weight: bold;">${escapeHtml(s.lang)}</a></td>
-            <td><a href="${golferUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">${escapeHtml(s.login)}</a></td>
-            <td style="text-align: right;"><strong>${Number(s.bytes).toLocaleString()} B</strong></td>
-            <td style="text-align: right; color: ${diffColor}; font-weight: bold;">${diffText}</td>
-            <td style="text-align: center;"><span class="medal">${s.medal}</span> <span style="font-size: 0.85em; color: var(--text-dim);">${escapeHtml(s.note || '')}</span></td>
+            <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(s.lang)}</a></td>
+            <td>${golferLink}</td>
+            <td style="text-align: right;"><strong>${s.bytes.toLocaleString()} B</strong></td>
+            <td style="text-align: right;" class="${diffClass}">${diffText}</td>
+            <td style="text-align: right;"><span class="medal">${s.medal}</span> ${escapeHtml(s.note)}</td>
           </tr>
         `;
       }).join('');
     }
 
     modal.innerHTML = `
-      <div class="card" style="max-width: 800px; width: 95%; max-height: 85vh; display: flex; flex-direction: column; gap: 1rem; overflow: hidden; position: relative;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
-          <h3 style="margin: 0; color: var(--accent); font-size: 1.25rem;">
-            Record Solves on ${escapeHtml(dateStr)} (Net Change: ${changeText})
-          </h3>
-          <button id="closeDailyGoldsModalBtn" style="background: transparent; border: none; color: var(--text-dim); font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0 0.5rem;">&times;</button>
+      <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 20px 24px; border-radius: 8px; min-width: 320px; max-width: 780px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px;">
+          <div>
+            <h3 style="margin: 0; color: var(--accent, #22c55e); font-size: 1.2em;">Record Changes for ${escapeHtml(dateStr)}</h3>
+            <div style="font-size: 0.85em; color: var(--text-dim, #94a3b8); margin-top: 4px;">
+              Net Change: <strong>${changeText}</strong> &nbsp;|&nbsp; Solves: <strong>${solutions ? solutions.length : 0}</strong>
+            </div>
+          </div>
+          <button id="closeDailyGoldsModalBtn" style="background: none; border: none; color: #aaa; font-size: 1.5em; cursor: pointer; line-height: 1;">&times;</button>
         </div>
-
-        <div style="overflow-y: auto; flex: 1; border-radius: 4px;">
-          <table class="main-table" style="width: 100%; margin-top: 0;">
+        <div style="max-height: 380px; overflow-y: auto;">
+          <table class="main-table" style="font-size: 0.9rem;">
             <thead>
               <tr>
                 <th>Hole</th>
-                <th>Language</th>
+                <th>Lang</th>
                 <th>Golfer</th>
                 <th style="text-align: right;">Bytes</th>
                 <th style="text-align: right;">Diff</th>
-                <th style="text-align: center;">Status</th>
+                <th style="text-align: right;">Type</th>
               </tr>
             </thead>
             <tbody>
@@ -472,119 +559,19 @@
             </tbody>
           </table>
         </div>
-
-        <div style="display: flex; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border);">
-          <button id="closeDailyGoldsModalFooterBtn" class="btn-secondary">Close</button>
-        </div>
       </div>
     `;
 
     modal.classList.remove('hidden');
-    const closeModal = () => modal.classList.add('hidden');
-
-    document.getElementById('closeDailyGoldsModalBtn')?.addEventListener('click', closeModal);
-    document.getElementById('closeDailyGoldsModalFooterBtn')?.addEventListener('click', closeModal);
-
-    modal.onclick = (e) => {
-      if (e.target === modal) closeModal();
-    };
+    modal.querySelector('#closeDailyGoldsModalBtn')?.addEventListener('click', () => modal.classList.add('hidden'));
+    modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
   }
 
   /* ==========================================================================
-     USER MEDALS BREAKDOWN MODAL
+     2. LOST DIAMONDS / GOLDS / UNICORNS QUERY
      ========================================================================== */
 
-  function showUserMedalsModal(golfer, queryType, items) {
-    let modal = document.getElementById('userMedalsModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'userMedalsModal';
-      modal.style.cssText = `
-        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-        background-color: rgba(0, 0, 0, 0.75); -webkit-backdrop-filter: blur(4px);
-        backdrop-filter: blur(4px); display: flex; justify-content: center;
-        align-items: center; z-index: 9999; padding: 1rem;
-      `;
-      document.body.appendChild(modal);
-    }
-
-    const labelMap = {
-      'bytes_gold_medals': '🥇 Gold Medals',
-      'bytes_diamonds': '💎 Diamonds',
-      'bytes_unicorns': '🦄 Unicorns'
-    };
-    const categoryName = labelMap[queryType] || 'Medals';
-
-    const sortedItems = [...items].sort((a, b) => a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang));
-
-    let rowsHtml = '';
-    if (sortedItems.length === 0) {
-      rowsHtml = `<tr><td colspan="3" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">No details available.</td></tr>`;
-    } else {
-      rowsHtml = sortedItems.map(item => {
-        const holeUrl = `https://code.golf/${encodeURIComponent(item.hole)}`;
-        const langUrl = `https://code.golf/${encodeURIComponent(item.hole)}#${encodeURIComponent(item.lang)}`;
-
-        return `
-          <tr>
-            <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(item.hole)}</strong></a></td>
-            <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; font-weight: bold;">${escapeHtml(item.lang)}</a></td>
-            <td style="text-align: right;"><strong>${Number(item.bytes).toLocaleString()} B</strong></td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    const golferUrl = `https://code.golf/golfers/${encodeURIComponent(golfer)}`;
-
-    modal.innerHTML = `
-      <div class="card" style="max-width: 700px; width: 95%; max-height: 85vh; display: flex; flex-direction: column; gap: 1rem; overflow: hidden; position: relative;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
-          <h3 style="margin: 0; color: var(--accent); font-size: 1.25rem;">
-            ${categoryName} for <a href="${golferUrl}" target="_blank" rel="noopener noreferrer" class="golf-link" style="color: inherit;">${escapeHtml(golfer)}</a> (${sortedItems.length})
-          </h3>
-          <button id="closeUserMedalsModalBtn" style="background: transparent; border: none; color: var(--text-dim); font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0 0.5rem;">&times;</button>
-        </div>
-
-        <div style="overflow-y: auto; flex: 1; border-radius: 4px;">
-          <table class="main-table" style="width: 100%; margin-top: 0;">
-            <thead>
-              <tr>
-                <th>Hole</th>
-                <th>Language</th>
-                <th style="text-align: right;">Bytes</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border);">
-          <button id="closeUserMedalsModalFooterBtn" class="btn-secondary">Close</button>
-        </div>
-      </div>
-    `;
-
-    modal.classList.remove('hidden');
-    const closeModal = () => modal.classList.add('hidden');
-
-    document.getElementById('closeUserMedalsModalBtn')?.addEventListener('click', closeModal);
-    document.getElementById('closeUserMedalsModalFooterBtn')?.addEventListener('click', closeModal);
-
-    modal.onclick = (e) => {
-      if (e.target === modal) closeModal();
-    };
-  }
-
-  /* ==========================================================================
-     2. QUERY SOLUTIONS / USER LEADERBOARDS
-     ========================================================================== */
-
-  function runSolutionsQuery(jsonData, queryType, holesJson, langsJson, includeExperimental) {
-    const holeLangUsers = new Map();
-
+  function processLostMedals(jsonData, includeExperimental, holesJson, langsJson, golferFilter = '', medalTypeFilter = 'all') {
     let validHoles = null;
     if (holesJson && Array.isArray(holesJson)) {
       validHoles = new Set(
@@ -603,179 +590,403 @@
       );
     }
 
-    for (const x of jsonData) {
-      if (x.scoring !== "bytes") continue;
+    const bytesSubs = jsonData.filter(x => {
+      if (x.scoring !== 'bytes') return false;
+      if (validHoles && !validHoles.has(x.hole)) return false;
+      if (validLangs && !validLangs.has(x.lang)) return false;
+      return true;
+    });
 
-      const lang = x.lang;
-      const hole = x.hole;
-      const login = x.login;
-      const byte = Number(x.bytes);
+    bytesSubs.sort((a, b) => {
+      const timeA = new Date(a.submitted).getTime() || 0;
+      const timeB = new Date(b.submitted).getTime() || 0;
+      return timeA - timeB;
+    });
 
-      if (validHoles && !validHoles.has(hole)) continue;
-      if (validLangs && !validLangs.has(lang)) continue;
+    const state = new Map();
+    const lossEvents = [];
+    let maxTimestamp = 0;
 
-      const key = `${hole}::${lang}`;
-      if (!holeLangUsers.has(key)) {
-        holeLangUsers.set(key, []);
+    for (const sub of bytesSubs) {
+      const key = `${sub.hole}::${sub.lang}`;
+      const bytes = Number(sub.bytes);
+      const login = sub.login;
+      const subTime = new Date(sub.submitted).getTime() || 0;
+      if (subTime > maxTimestamp) maxTimestamp = subTime;
+
+      if (!state.has(key)) {
+        const solversSet = new Set([login.toLowerCase()]);
+        state.set(key, {
+          currentBestBytes: bytes,
+          currentHolders: [{ login, submitted: sub.submitted }],
+          solversSet
+        });
+      } else {
+        const st = state.get(key);
+        const oldSolversCount = st.solversSet.size;
+        st.solversSet.add(login.toLowerCase());
+        const newSolversCount = st.solversSet.size;
+
+        if (bytes < st.currentBestBytes) {
+          const oldBytes = st.currentBestBytes;
+          const oldHolders = [...st.currentHolders];
+          const oldHoldersCount = oldHolders.length;
+
+          let oldMedalType = 'gold';
+          let oldEmoji = '🥇';
+
+          if (oldHoldersCount === 1) {
+            if (oldSolversCount === 1) {
+              oldMedalType = 'unicorn';
+              oldEmoji = '🦄';
+            } else {
+              oldMedalType = 'diamond';
+              oldEmoji = '💎';
+            }
+          }
+
+          const oldDisplayHtml = `${oldBytes}b${oldHoldersCount > 1 ? `<sub>${oldHoldersCount}</sub>` : ''} ${oldEmoji}`;
+          const oldDisplayTxt = `${oldBytes}b${oldHoldersCount > 1 ? ` (${oldHoldersCount})` : ''} ${oldEmoji}`;
+
+          let newMedalType = 'diamond';
+          let newEmoji = '💎';
+          if (newSolversCount === 1) {
+            newMedalType = 'unicorn';
+            newEmoji = '🦄';
+          }
+          const newDisplayHtml = `${bytes}b ${newEmoji}`;
+          const newDisplayTxt = `${bytes}b ${newEmoji}`;
+
+          lossEvents.push({
+            hole: sub.hole,
+            lang: sub.lang,
+            timestamp: subTime,
+            dateStr: parseDateStr(sub.submitted),
+            formattedTime: sub.submitted ? String(sub.submitted).replace('T', ' ').substring(0, 19) : 'Unknown',
+            oldBytes,
+            oldHolders: oldHolders.map(h => h.login),
+            oldMedalType,
+            oldEmoji,
+            oldDisplayHtml,
+            oldDisplayTxt,
+            newBytes: bytes,
+            newGolfer: login,
+            newMedalType,
+            newEmoji,
+            newDisplayHtml,
+            newDisplayTxt,
+            byteDiff: oldBytes - bytes
+          });
+
+          st.currentBestBytes = bytes;
+          st.currentHolders = [{ login, submitted: sub.submitted }];
+        } else if (bytes === st.currentBestBytes) {
+          if (!st.currentHolders.some(h => h.login.toLowerCase() === login.toLowerCase())) {
+            st.currentHolders.push({ login, submitted: sub.submitted });
+          }
+        }
       }
-      holeLangUsers.get(key).push({ login, byte });
     }
 
-    const results = [];
-    let totalGolds = 0;
-    let totalDiamonds = 0;
-    let totalUnicorns = 0;
+    if (maxTimestamp === 0) maxTimestamp = Date.now();
 
-    const golferMap = new Map();
+    const ms24h = 24 * 3600 * 1000;
+    const msWeek = 7 * 24 * 3600 * 1000;
+    const msMonth = 30 * 24 * 3600 * 1000;
+    const msYear = 365 * 24 * 3600 * 1000;
 
-    for (const [key, users] of holeLangUsers.entries()) {
-      const parts = key.split("::");
-      const hole = parts[0];
-      const lang = parts[1];
+    const cutoff24h = maxTimestamp - ms24h;
+    const cutoffWeek = maxTimestamp - msWeek;
+    const cutoffMonth = maxTimestamp - msMonth;
+    const cutoffYear = maxTimestamp - msYear;
 
-      users.sort((a, b) => a.byte - b.byte);
-      if (users.length === 0) continue;
+    const searchGolferLower = golferFilter.trim().toLowerCase();
 
-      const minByte = users[0].byte;
-      const tiedForFirst = users.filter(u => u.byte === minByte);
-
-      const isDiamond = tiedForFirst.length === 1;
-      const isUnicorn = isDiamond && users.length === 1;
-
-      if (isUnicorn) totalUnicorns++;
-      if (isDiamond) totalDiamonds++;
-      totalGolds += tiedForFirst.length;
-
-      if (queryType === 'bytes_gold_medals') {
-        tiedForFirst.forEach(winner => {
-          if (!golferMap.has(winner.login)) golferMap.set(winner.login, []);
-          golferMap.get(winner.login).push({ hole, lang, bytes: winner.byte });
-        });
-      } else if (queryType === 'bytes_diamonds' && isDiamond) {
-        const golfer = tiedForFirst[0].login;
-        if (!golferMap.has(golfer)) golferMap.set(golfer, []);
-        golferMap.get(golfer).push({ hole, lang, bytes: tiedForFirst[0].byte });
-      } else if (queryType === 'bytes_unicorns' && isUnicorn) {
-        const golfer = tiedForFirst[0].login;
-        if (!golferMap.has(golfer)) golferMap.set(golfer, []);
-        golferMap.get(golfer).push({ hole, lang, bytes: tiedForFirst[0].byte });
-      } else if (!isUserQueryType(queryType)) {
-        let typeLabel = '';
-        let shouldInclude = false;
-
-        if (queryType === 'longest_unicorns' && isUnicorn) {
-          shouldInclude = true;
-          typeLabel = '🦄 Unicorn';
-        } else if (queryType === 'longest_diamonds' && isDiamond) {
-          shouldInclude = true;
-          typeLabel = isUnicorn ? '🦄 Unicorn' : '💎 Diamond';
-        } else if (queryType === 'longest_golds') {
-          shouldInclude = true;
-          typeLabel = isUnicorn ? '🦄 Unicorn' : (isDiamond ? '💎 Diamond' : `🥇 Gold (Tie: ${tiedForFirst.length})`);
+    function filterEvents(events) {
+      return events.filter(e => {
+        if (searchGolferLower) {
+          const matchOld = e.oldHolders.some(u => u.toLowerCase().includes(searchGolferLower));
+          if (!matchOld) return false;
         }
 
-        if (shouldInclude) {
-          tiedForFirst.forEach(winner => {
-            results.push({
-              hole,
-              lang,
-              golfer: winner.login,
-              bytes: winner.byte,
-              type: typeLabel
-            });
-          });
+        if (medalTypeFilter === 'diamonds' && e.oldMedalType !== 'diamond') return false;
+        if (medalTypeFilter === 'unicorns' && e.oldMedalType !== 'unicorn') return false;
+        if (medalTypeFilter === 'golds' && e.oldMedalType !== 'gold') return false;
+
+        return true;
+      });
+    }
+
+    const events24h = filterEvents(lossEvents.filter(e => e.timestamp >= cutoff24h));
+    const eventsWeek = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffWeek));
+    const eventsMonth = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffMonth));
+    const eventsYear = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffYear));
+
+    const sortDesc = (arr) => [...arr].sort((a, b) => b.timestamp - a.timestamp);
+
+    return {
+      type: 'lost_golds_diamonds',
+      totalLosses: lossEvents.length,
+      maxTimestamp,
+      events24h: sortDesc(events24h),
+      eventsWeek: sortDesc(eventsWeek),
+      eventsMonth: sortDesc(eventsMonth),
+      eventsYear: sortDesc(eventsYear)
+    };
+  }
+
+  function renderLostMedalsResults(lostResults) {
+    const card = document.getElementById('queryResultsCard');
+    const titleEl = document.getElementById('queryResultsTitle');
+    const statsContainer = document.getElementById('queryStatsContainer');
+    const singleTableContainer = document.getElementById('singleTableContainer');
+    const multiTableContainer = document.getElementById('multiTableContainer');
+
+    if (!card || !multiTableContainer) return;
+
+    if (titleEl) titleEl.textContent = 'Lost Diamonds / Golds / Unicorns';
+    if (singleTableContainer) singleTableContainer.classList.add('hidden');
+    multiTableContainer.classList.remove('hidden');
+
+    if (statsContainer) {
+      statsContainer.innerHTML = `
+        <div class="stat-box">
+          <div class="val">${lostResults.events24h.length.toLocaleString()}</div>
+          <div class="lbl">Last 24 Hours</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${lostResults.eventsWeek.length.toLocaleString()}</div>
+          <div class="lbl">Last Week</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${lostResults.eventsMonth.length.toLocaleString()}</div>
+          <div class="lbl">Last Month</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${lostResults.eventsYear.length.toLocaleString()}</div>
+          <div class="lbl">Last Year</div>
+        </div>
+      `;
+    }
+
+    const timeframes = [
+      { id: '24h', title: '⏱️ Last 24 Hours', events: lostResults.events24h },
+      { id: 'week', title: '🗓️ Last Week', events: lostResults.eventsWeek },
+      { id: 'month', title: '📅 Last Month', events: lostResults.eventsMonth },
+      { id: 'year', title: '📆 Last Year', events: lostResults.eventsYear }
+    ];
+
+    multiTableContainer.innerHTML = timeframes.map(tf => {
+      let rowsHtml = '';
+      if (tf.events.length === 0) {
+        rowsHtml = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1.2rem;">No lost record events found in this timeframe.</td></tr>`;
+      } else {
+        rowsHtml = tf.events.map((e, idx) => {
+          const holeUrl = `https://code.golf/${encodeURIComponent(e.hole)}`;
+          const langUrl = `https://code.golf/${encodeURIComponent(e.hole)}#${encodeURIComponent(e.lang)}`;
+          const lostByDisplay = e.oldHolders.map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : escapeHtml(u)).join(', ');
+          const newGolferDisplay = typeof getGolferLink === 'function' ? getGolferLink(e.newGolfer) : escapeHtml(e.newGolfer);
+
+          return `
+            <tr class="lost-event-row" data-timeframe="${tf.id}" data-index="${idx}" style="cursor: pointer;">
+              <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(e.hole)}</strong></a></td>
+              <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(e.lang)}</a></td>
+              <td>${e.oldDisplayHtml}</td>
+              <td>${e.newDisplayHtml}</td>
+              <td>${lostByDisplay}</td>
+              <td><strong>${newGolferDisplay}</strong></td>
+              <td>${escapeHtml(e.dateStr)}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      return `
+        <div class="card" style="margin: 0; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border, #334155);">
+          <h4 style="margin-top: 0; margin-bottom: 0.8rem; color: #38bdf8; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center;">
+            <span>${tf.title}</span>
+            <span style="font-size: 0.85rem; color: var(--text-dim); font-weight: normal;">(${tf.events.length.toLocaleString()} event${tf.events.length === 1 ? '' : 's'})</span>
+          </h4>
+          <div style="overflow-x: auto;">
+            <table class="main-table">
+              <thead>
+                <tr>
+                  <th>Hole</th>
+                  <th>Language</th>
+                  <th>Old Best</th>
+                  <th>New Best</th>
+                  <th>Lost By</th>
+                  <th>New Best By</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    card.classList.remove('hidden');
+  }
+
+  /* ==========================================================================
+     3. STANDARD SOLUTIONS QUERIES
+     ========================================================================== */
+
+  function runSolutionsQuery(jsonData, queryType, holesJson, langsJson, includeExperimental) {
+    let validHoles = null;
+    if (holesJson && Array.isArray(holesJson)) {
+      validHoles = new Set(
+        holesJson
+          .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
+          .map(h => h.id)
+      );
+    }
+
+    let validLangs = null;
+    if (langsJson && Array.isArray(langsJson)) {
+      validLangs = new Set(
+        langsJson
+          .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
+          .map(l => l.id)
+      );
+    }
+
+    const bytesSubs = jsonData.filter(x => {
+      if (x.scoring !== 'bytes') return false;
+      if (validHoles && !validHoles.has(x.hole)) return false;
+      if (validLangs && !validLangs.has(x.lang)) return false;
+      return true;
+    });
+
+    const holeLangStats = new Map();
+    const holeSolversMap = new Map();
+
+    for (const x of bytesSubs) {
+      const key = `${x.hole}::${x.lang}`;
+      const bytes = Number(x.bytes);
+      const login = x.login;
+
+      if (!holeSolversMap.has(key)) holeSolversMap.set(key, new Set());
+      holeSolversMap.get(key).add(login.toLowerCase());
+
+      if (!holeLangStats.has(key)) {
+        holeLangStats.set(key, { minBytes: bytes, holders: [x] });
+      } else {
+        const stat = holeLangStats.get(key);
+        if (bytes < stat.minBytes) {
+          stat.minBytes = bytes;
+          stat.holders = [x];
+        } else if (bytes === stat.minBytes) {
+          if (!stat.holders.some(h => h.login.toLowerCase() === login.toLowerCase())) {
+            stat.holders.push(x);
+          }
         }
       }
     }
 
     if (isUserQueryType(queryType)) {
-      for (const [golfer, items] of golferMap.entries()) {
-        results.push({ golfer, count: items.length, items });
-      }
-    }
+      const userCounts = new Map();
 
-    return {
-      results,
-      totalGolds,
-      totalDiamonds,
-      totalUnicorns
-    };
-  }
+      for (const [key, stat] of holeLangStats.entries()) {
+        const [hole, lang] = key.split('::');
+        const totalSolvers = holeSolversMap.get(key)?.size || 0;
+        const isUnique = stat.holders.length === 1;
 
-  function sortQueryData(results, sortField, sortDir) {
-    const userQuery = isUserQueryType(currentQueryType);
+        for (const h of stat.holders) {
+          const golfer = h.login;
+          if (!userCounts.has(golfer)) userCounts.set(golfer, []);
 
-    return [...results].sort((a, b) => {
-      if (userQuery) {
-        let valA, valB;
-        if (sortField === 'golfer') {
-          return sortDir === 'asc' ? a.golfer.localeCompare(b.golfer) : b.golfer.localeCompare(a.golfer);
-        } else if (sortField === 'count') {
-          valA = a.count; valB = b.count;
-        } else {
-          valA = a.count; valB = b.count;
+          if (queryType === 'bytes_gold_medals') {
+            userCounts.get(golfer).push({ hole, lang, bytes: stat.minBytes, type: isUnique ? '💎' : '🥇', tieCount: stat.holders.length });
+          } else if (queryType === 'bytes_diamonds' && isUnique) {
+            userCounts.get(golfer).push({ hole, lang, bytes: stat.minBytes, type: '💎', tieCount: 1 });
+          } else if (queryType === 'bytes_unicorns' && isUnique && totalSolvers === 1) {
+            userCounts.get(golfer).push({ hole, lang, bytes: stat.minBytes, type: '🦄', tieCount: 1 });
+          }
         }
-
-        if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
-        return a.golfer.localeCompare(b.golfer);
       }
 
-      let valA, valB;
-      if (sortField === 'hole') {
-        return sortDir === 'asc' ? a.hole.localeCompare(b.hole) : b.hole.localeCompare(a.hole);
-      } else if (sortField === 'lang') {
-        return sortDir === 'asc' ? a.lang.localeCompare(b.lang) : b.lang.localeCompare(a.lang);
-      } else if (sortField === 'golfer') {
-        return sortDir === 'asc' ? a.golfer.localeCompare(b.golfer) : b.golfer.localeCompare(a.golfer);
-      } else if (sortField === 'bytes') {
-        valA = a.bytes; valB = b.bytes;
-      } else if (sortField === 'type') {
-        return sortDir === 'asc' ? a.type.localeCompare(b.type) : b.type.localeCompare(a.type);
-      } else {
-        valA = a.bytes; valB = b.bytes;
+      const results = [];
+      for (const [golfer, items] of userCounts.entries()) {
+        results.push({
+          golfer,
+          count: items.length,
+          items
+        });
       }
 
-      if (valA !== valB) return sortDir === 'desc' ? valB - valA : valA - valB;
-      return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang);
-    });
+      return { type: queryType, results };
+    } else {
+      const list = [];
+
+      for (const [key, stat] of holeLangStats.entries()) {
+        const [hole, lang] = key.split('::');
+        const totalSolvers = holeSolversMap.get(key)?.size || 0;
+        const isUnique = stat.holders.length === 1;
+
+        if (queryType === 'longest_golds') {
+          for (const h of stat.holders) {
+            list.push({ hole, lang, golfer: h.login, bytes: stat.minBytes, type: isUnique ? '💎' : `🥇 (${stat.holders.length})` });
+          }
+        } else if (queryType === 'longest_diamonds' && isUnique) {
+          list.push({ hole, lang, golfer: stat.holders[0].login, bytes: stat.minBytes, type: '💎' });
+        } else if (queryType === 'longest_unicorns' && isUnique && totalSolvers === 1) {
+          list.push({ hole, lang, golfer: stat.holders[0].login, bytes: stat.minBytes, type: '🦄' });
+        }
+      }
+
+      return { type: queryType, results: list };
+    }
   }
 
-  function renderQueryResults(queryData, queryType) {
-    const queryResultsCard = document.getElementById('queryResultsCard');
-    const queryResultsTitle = document.getElementById('queryResultsTitle');
-    const queryStatsContainer = document.getElementById('queryStatsContainer');
-    const thead = document.querySelector('#queryResultsTable thead');
+  function renderQueryResults(data, queryType) {
+    const card = document.getElementById('queryResultsCard');
+    const titleEl = document.getElementById('queryResultsTitle');
+    const statsContainer = document.getElementById('queryStatsContainer');
+    const singleTableContainer = document.getElementById('singleTableContainer');
+    const multiTableContainer = document.getElementById('multiTableContainer');
+    const table = document.getElementById('queryResultsTable');
 
-    const titleMap = {
-      'longest_golds': 'Longest BYTES Golds',
-      'longest_diamonds': 'Longest BYTES Diamonds',
-      'longest_unicorns': 'Longest BYTES Unicorns',
-      'bytes_gold_medals': 'BYTES Gold Medals Leaderboard',
-      'bytes_diamonds': 'BYTES Diamonds Leaderboard',
-      'bytes_unicorns': 'BYTES Unicorns Leaderboard'
-    };
+    if (!card || !table) return;
 
-    if (queryResultsTitle) {
-      queryResultsTitle.textContent = `${titleMap[queryType] || 'Query Results'} (Top 100)`;
+    if (singleTableContainer) singleTableContainer.classList.remove('hidden');
+    if (multiTableContainer) multiTableContainer.classList.add('hidden');
+
+    let titleText = 'Query Results';
+    if (queryType === 'longest_golds') titleText = 'Longest BYTES Golds';
+    else if (queryType === 'longest_diamonds') titleText = 'Longest BYTES Diamonds';
+    else if (queryType === 'longest_unicorns') titleText = 'Longest BYTES Unicorns';
+    else if (queryType === 'bytes_gold_medals') titleText = 'Golfer Bytes Gold Medals Ranking';
+    else if (queryType === 'bytes_diamonds') titleText = 'Golfer Bytes Diamonds Ranking';
+    else if (queryType === 'bytes_unicorns') titleText = 'Golfer Bytes Unicorns Ranking';
+
+    if (titleEl) titleEl.textContent = titleText;
+
+    if (statsContainer) {
+      if (isUserQueryType(queryType)) {
+        const totalGolfers = data.results.length;
+        const totalMedals = data.results.reduce((a, r) => a + r.count, 0);
+        const topGolfer = totalGolfers > 0 ? data.results[0].golfer : '-';
+        statsContainer.innerHTML = `
+          <div class="stat-box"><div class="val">${totalGolfers.toLocaleString()}</div><div class="lbl">Total Golfers</div></div>
+          <div class="stat-box"><div class="val">${totalMedals.toLocaleString()}</div><div class="lbl">Total Medals Held</div></div>
+          <div class="stat-box"><div class="val">${escapeHtml(topGolfer)}</div><div class="lbl">Top Golfer</div></div>
+        `;
+      } else {
+        const totalSolutions = data.results.length;
+        const maxBytes = totalSolutions > 0 ? Math.max(...data.results.map(r => r.bytes)) : 0;
+        statsContainer.innerHTML = `
+          <div class="stat-box"><div class="val">${totalSolutions.toLocaleString()}</div><div class="lbl">Total Matching Solutions</div></div>
+          <div class="stat-box"><div class="val">${maxBytes.toLocaleString()} B</div><div class="lbl">Max Solution Length</div></div>
+        `;
+      }
     }
 
-    if (queryStatsContainer) {
-      queryStatsContainer.innerHTML = `
-        <div class="stat-box">
-          <div class="val">${queryData.totalGolds.toLocaleString()}</div>
-          <div class="lbl">🥇 Total Golds</div>
-        </div>
-        <div class="stat-box">
-          <div class="val">${queryData.totalDiamonds.toLocaleString()}</div>
-          <div class="lbl">💎 Total Diamonds</div>
-        </div>
-        <div class="stat-box">
-          <div class="val">${queryData.totalUnicorns.toLocaleString()}</div>
-          <div class="lbl">🦄 Total Unicorns</div>
-        </div>
-      `;
-    }
-
+    const thead = table.querySelector('thead');
     if (thead) {
       const renderTh = (id, label, fieldName, align = 'left') => {
         const isCurrent = currentQuerySortField === fieldName;
@@ -785,327 +996,246 @@
       };
 
       if (isUserQueryType(queryType)) {
-        const countLabelMap = {
-          'bytes_gold_medals': '🥇 Gold Medals',
-          'bytes_diamonds': '💎 Diamonds',
-          'bytes_unicorns': '🦄 Unicorns'
-        };
-
         thead.innerHTML = `
           <tr>
-            <th style="width: 40px; color: var(--text-dim);">#</th>
-            ${renderTh('thQueryGolfer', 'Golfer', 'golfer')}
-            ${renderTh('thQueryCount', countLabelMap[queryType] || 'Count', 'count', 'right')}
+            <th style="width: 50px;">#</th>
+            ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
+            ${renderTh('thQCount', 'Medal Count', 'count', 'right')}
           </tr>
         `;
-
-        const bindSort = (id, fieldName, defaultDir = 'desc') => {
-          const el = document.getElementById(id);
-          el?.addEventListener('click', () => {
-            if (currentQuerySortField === fieldName) {
-              currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
-            } else {
-              currentQuerySortField = fieldName;
-              currentQuerySortDir = defaultDir;
-            }
-            applyQueryFilterAndRender();
-          });
-        };
-
-        bindSort('thQueryGolfer', 'golfer', 'asc');
-        bindSort('thQueryCount', 'count', 'desc');
-
       } else {
         thead.innerHTML = `
           <tr>
-            <th style="width: 40px; color: var(--text-dim);">#</th>
-            ${renderTh('thQueryHole', 'Hole', 'hole')}
-            ${renderTh('thQueryLang', 'Language', 'lang')}
-            ${renderTh('thQueryGolfer', 'Golfer', 'golfer')}
-            ${renderTh('thQueryBytes', 'Bytes', 'bytes', 'right')}
-            ${renderTh('thQueryType', 'Type', 'type', 'right')}
+            <th style="width: 50px;">#</th>
+            ${renderTh('thQHole', 'Hole', 'hole', 'left')}
+            ${renderTh('thQLang', 'Language', 'lang', 'left')}
+            ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
+            ${renderTh('thQBytes', 'Bytes', 'bytes', 'right')}
+            ${renderTh('thQType', 'Type', 'type', 'right')}
           </tr>
         `;
+      }
 
-        const bindSort = (id, fieldName, defaultDir = 'desc') => {
-          const el = document.getElementById(id);
-          el?.addEventListener('click', () => {
-            if (currentQuerySortField === fieldName) {
-              currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
-            } else {
-              currentQuerySortField = fieldName;
-              currentQuerySortDir = defaultDir;
-            }
-            applyQueryFilterAndRender();
-          });
-        };
+      const bindQSort = (id, fieldName, defaultDir = 'desc') => {
+        const el = document.getElementById(id);
+        el?.addEventListener('click', () => {
+          if (currentQuerySortField === fieldName) {
+            currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+          } else {
+            currentQuerySortField = fieldName;
+            currentQuerySortDir = defaultDir;
+          }
+          applyQueryFilterAndRender();
+        });
+      };
 
-        bindSort('thQueryHole', 'hole', 'asc');
-        bindSort('thQueryLang', 'lang', 'asc');
-        bindSort('thQueryGolfer', 'golfer', 'asc');
-        bindSort('thQueryBytes', 'bytes', 'desc');
-        bindSort('thQueryType', 'type', 'asc');
+      if (isUserQueryType(queryType)) {
+        bindQSort('thQGolfer', 'golfer', 'asc');
+        bindQSort('thQCount', 'count', 'desc');
+      } else {
+        bindQSort('thQHole', 'hole', 'asc');
+        bindQSort('thQLang', 'lang', 'asc');
+        bindQSort('thQGolfer', 'golfer', 'asc');
+        bindQSort('thQBytes', 'bytes', 'desc');
+        bindQSort('thQType', 'type', 'asc');
       }
     }
 
     applyQueryFilterAndRender();
-    queryResultsCard?.classList.remove('hidden');
+    card.classList.remove('hidden');
   }
 
   function applyQueryFilterAndRender() {
-    const queryResultsBody = document.getElementById('queryResultsBody');
+    const tbody = document.getElementById('queryResultsBody');
     const filterText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+    if (!tbody || !lastQueryResults) return;
 
-    if (!queryResultsBody || !lastQueryResults) return;
+    let items = [...lastQueryResults.results];
 
-    let filtered = lastQueryResults.results || [];
-
-    if (isUserQueryType(currentQueryType)) {
-      if (filterText) {
-        filtered = filtered.filter(r => r.golfer.toLowerCase().includes(filterText));
-      }
-
-      let sorted = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
-      const limitedResults = sorted.slice(0, 100);
-
-      queryResultsBody.innerHTML = '';
-      limitedResults.forEach((r, index) => {
-        const tr = document.createElement('tr');
-        const golferUrl = `https://code.golf/golfers/${encodeURIComponent(r.golfer)}`;
-        const golferDisplay = `<a href="${golferUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">${escapeHtml(r.golfer)}</a>`;
-
-        tr.innerHTML = `
-          <td style="color: var(--text-dim);">${index + 1}</td>
-          <td>${golferDisplay}</td>
-          <td style="text-align: right;">
-            <span class="user-medals-btn" 
-                  data-golfer="${escapeHtml(r.golfer)}" 
-                  title="Click to view hole/language breakdown"
-                  style="cursor: pointer; font-weight: bold; text-decoration: underline; color: #38bdf8;">
-              ${r.count.toLocaleString()}
-            </span>
-          </td>
-        `;
-        queryResultsBody.appendChild(tr);
-      });
-    } else {
-      if (filterText) {
-        filtered = filtered.filter(r => 
-          r.hole.toLowerCase().includes(filterText) || 
-          r.lang.toLowerCase().includes(filterText) ||
-          r.golfer.toLowerCase().includes(filterText)
-        );
-      }
-
-      let sorted = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir);
-      const limitedResults = sorted.slice(0, 100);
-
-      queryResultsBody.innerHTML = '';
-      limitedResults.forEach((r, index) => {
-        const tr = document.createElement('tr');
-
-        const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
-        const holeDisplay = `<a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a>`;
-
-        const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
-        const langDisplay = `<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; font-weight: bold;">${escapeHtml(r.lang)}</a>`;
-
-        const golferUrl = `https://code.golf/golfers/${encodeURIComponent(r.golfer)}`;
-        const golferDisplay = `<a href="${golferUrl}" target="_blank" rel="noopener noreferrer" class="golf-link">${escapeHtml(r.golfer)}</a>`;
-
-        tr.innerHTML = `
-          <td style="color: var(--text-dim);">${index + 1}</td>
-          <td>${holeDisplay}</td>
-          <td>${langDisplay}</td>
-          <td>${golferDisplay}</td>
-          <td style="text-align: right;"><strong>${r.bytes.toLocaleString()}</strong></td>
-          <td style="text-align: right; color: var(--text-dim);">${escapeHtml(r.type)}</td>
-        `;
-        queryResultsBody.appendChild(tr);
+    if (filterText) {
+      items = items.filter(r => {
+        if (isUserQueryType(lastQueryResults.type)) {
+          return r.golfer.toLowerCase().includes(filterText);
+        } else {
+          return r.hole.toLowerCase().includes(filterText) ||
+                 r.lang.toLowerCase().includes(filterText) ||
+                 r.golfer.toLowerCase().includes(filterText);
+        }
       });
     }
+
+    items.sort((a, b) => {
+      let valA = a[currentQuerySortField];
+      let valB = b[currentQuerySortField];
+
+      if (typeof valA === 'string') {
+        const comp = currentQuerySortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        if (comp !== 0) return comp;
+      } else {
+        if (valA !== valB) return currentQuerySortDir === 'desc' ? valB - valA : valA - valB;
+      }
+      return 0;
+    });
+
+    tbody.innerHTML = '';
+
+    items.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+
+      if (isUserQueryType(lastQueryResults.type)) {
+        const golferLink = typeof getGolferLink === 'function' ? getGolferLink(r.golfer) : escapeHtml(r.golfer);
+
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${golferLink}</td>
+          <td style="text-align: right;">
+            <button class="btn-secondary user-medals-btn" data-golfer="${escapeHtml(r.golfer)}" style="padding: 2px 8px; font-size: 0.85rem;">
+              ${r.count.toLocaleString()} Medals 🔍
+            </button>
+          </td>
+        `;
+      } else {
+        const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
+        const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
+        const golferLink = typeof getGolferLink === 'function' ? getGolferLink(r.golfer) : escapeHtml(r.golfer);
+
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a></td>
+          <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(r.lang)}</a></td>
+          <td>${golferLink}</td>
+          <td style="text-align: right;"><strong>${r.bytes.toLocaleString()} B</strong></td>
+          <td style="text-align: right;"><span class="medal">${r.type}</span></td>
+        `;
+      }
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function showUserMedalsModal(golferName, queryType, items) {
+    let modal = document.getElementById('userMedalsModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'userMedalsModal';
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background-color: rgba(0, 0, 0, 0.75); -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(4px); display: flex; justify-content: center;
+        align-items: center; z-index: 9999; padding: 1rem;
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const rowsHtml = items.map(m => {
+      const holeUrl = `https://code.golf/${encodeURIComponent(m.hole)}`;
+      const langUrl = `https://code.golf/${encodeURIComponent(m.hole)}#${encodeURIComponent(m.lang)}`;
+      const tieDisplay = m.tieCount > 1 ? ` (${m.tieCount} tied)` : '';
+
+      return `
+        <tr>
+          <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(m.hole)}</strong></a></td>
+          <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(m.lang)}</a></td>
+          <td style="text-align: right;"><strong>${m.bytes.toLocaleString()} B</strong></td>
+          <td style="text-align: right;"><span class="medal">${m.type}</span>${tieDisplay}</td>
+        </tr>
+      `;
+    }).join('');
+
+    modal.innerHTML = `
+      <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 20px 24px; border-radius: 8px; min-width: 320px; max-width: 680px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px;">
+          <div>
+            <h3 style="margin: 0; color: var(--accent, #22c55e); font-size: 1.2em;">Medals for ${escapeHtml(golferName)}</h3>
+            <div style="font-size: 0.85em; color: var(--text-dim, #94a3b8); margin-top: 4px;">Total Held: <strong>${items.length}</strong></div>
+          </div>
+          <button id="closeUserMedalsModalBtn" style="background: none; border: none; color: #aaa; font-size: 1.5em; cursor: pointer; line-height: 1;">&times;</button>
+        </div>
+        <div style="max-height: 380px; overflow-y: auto;">
+          <table class="main-table" style="font-size: 0.9rem;">
+            <thead>
+              <tr>
+                <th>Hole</th>
+                <th>Language</th>
+                <th style="text-align: right;">Bytes</th>
+                <th style="text-align: right;">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    modal.classList.remove('hidden');
+    modal.querySelector('#closeUserMedalsModalBtn')?.addEventListener('click', () => modal.classList.add('hidden'));
+    modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
   }
 
   function handleExport() {
     if (!lastQueryResults) return;
 
-    const searchText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+    if (currentQueryType === 'lost_golds_diamonds') {
+      const timeframes = [
+        { name: 'Last 24 Hours', events: lastQueryResults.events24h },
+        { name: 'Last Week', events: lastQueryResults.eventsWeek },
+        { name: 'Last Month', events: lastQueryResults.eventsMonth },
+        { name: 'Last Year', events: lastQueryResults.eventsYear }
+      ];
 
-    const getW = typeof getVisualWidth === 'function' ? getVisualWidth : (s => String(s).length);
-    const padStart = typeof padVisualStart === 'function' ? padVisualStart : ((s, w) => String(s).padStart(w));
-    const padEnd = typeof padVisualEnd === 'function' ? padVisualEnd : ((s, w) => String(s).padEnd(w));
-
-    if (currentQueryType === 'total_bytes_of_golds_per_day') {
-      let filtered = [...lastQueryResults];
-      if (searchText) {
-        filtered = filtered.filter(r => 
-          r.date.toLowerCase().includes(searchText) || 
-          r.topGolfer.toLowerCase().includes(searchText)
-        );
-      }
-
-      filtered.sort((a, b) => {
-        let valA = a[currentQuerySortField];
-        let valB = b[currentQuerySortField];
-        if (typeof valA === 'string') {
-          const comp = currentQuerySortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-          if (comp !== 0) return comp;
+      const lines = ['# Lost Diamonds / Golds / Unicorns Report\n'];
+      timeframes.forEach(tf => {
+        lines.push(`## ${tf.name}`);
+        lines.push('| Hole | Language | Old Best | New Best | Lost By | New Best By | Date |');
+        lines.push('|:---|:---|:---|:---|:---|:---|:---|');
+        if (tf.events.length === 0) {
+          lines.push('| - | - | - | - | - | - | - |');
         } else {
-          if (valA !== valB) return currentQuerySortDir === 'desc' ? valB - valA : valA - valB;
+          tf.events.forEach(e => {
+            lines.push(`| ${e.hole} | ${e.lang} | ${e.oldDisplayTxt} | ${e.newDisplayTxt} | ${e.oldHolders.join(', ')} | ${e.newGolfer} | ${e.dateStr} |`);
+          });
         }
-        return 0;
+        lines.push('');
       });
 
+      if (typeof downloadMarkdownFile === 'function') {
+        downloadMarkdownFile('lost_medals_report.md', lines.join('\n'));
+      }
+    } else if (currentQueryType === 'total_bytes_of_golds_per_day') {
       const headers = ['Date', 'Total Gold Bytes', 'Change', 'Record Solves', 'Top Golfer'];
-      const rightAlignCols = [1, 2, 3, 4];
-      const tableRows = filtered.map(r => [
+      const rows = lastQueryResults.map(r => [
         r.date,
         `${r.totalBytes.toLocaleString()} B`,
         r.change > 0 ? `+${r.change} B` : `${r.change} B`,
-        r.newGoldsCount.toLocaleString(),
+        String(r.newGoldsCount),
         r.topGolfer
       ]);
 
-      const colWidths = headers.map((header, colIdx) => {
-        let maxW = getW(header);
-        tableRows.forEach(r => {
-          const w = getW(r[colIdx]);
-          if (w > maxW) maxW = w;
-        });
-        return Math.max(maxW, 4);
-      });
-
-      const formatRow = (rowCells) => {
-        const formattedCells = rowCells.map((cell, idx) => {
-          const width = colWidths[idx];
-          return rightAlignCols.includes(idx)
-            ? padStart(cell, width)
-            : padEnd(cell, width);
-        });
-        return `| ${formattedCells.join(' | ')} |`;
-      };
-
-      const headerLine = formatRow(headers);
-      const separatorCells = colWidths.map((w, idx) => {
-        const isRight = rightAlignCols.includes(idx);
-        return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
-      });
-      const separatorLine = `| ${separatorCells.join(' | ')} |`;
-      const dataLines = tableRows.map(r => formatRow(r));
-      const mdContent = [headerLine, separatorLine, ...dataLines].join('\n');
+      const lines = [`| ${headers.join(' | ')} |`, `|:${'-'.repeat(10)}|${'-'.repeat(18)}:|${'-'.repeat(10)}:|${'-'.repeat(15)}:|${'-'.repeat(15)}:|`];
+      rows.forEach(r => lines.push(`| ${r.join(' | ')} |`));
 
       if (typeof downloadMarkdownFile === 'function') {
-        downloadMarkdownFile(`total_bytes_of_golds_per_day.md`, mdContent);
+        downloadMarkdownFile('golds_per_day.md', lines.join('\n'));
       }
-    } else if (isUserQueryType(currentQueryType)) {
-      if (!lastQueryResults.results || lastQueryResults.results.length === 0) return;
-
-      let filtered = lastQueryResults.results;
-      if (searchText) {
-        filtered = filtered.filter(r => r.golfer.toLowerCase().includes(searchText));
-      }
-
-      const sortedRows = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir).slice(0, 100);
-      const countLabelMap = {
-        'bytes_gold_medals': 'Gold Medals',
-        'bytes_diamonds': 'Diamonds',
-        'bytes_unicorns': 'Unicorns'
-      };
-      const headers = ['#', 'Golfer', countLabelMap[currentQueryType] || 'Count'];
-      const rightAlignCols = [2];
-
-      const tableRows = sortedRows.map((r, i) => [
-        String(i + 1),
-        r.golfer,
-        r.count.toLocaleString()
-      ]);
-
-      const colWidths = headers.map((header, colIdx) => {
-        let maxW = getW(header);
-        tableRows.forEach(r => {
-          const w = getW(r[colIdx]);
-          if (w > maxW) maxW = w;
-        });
-        return Math.max(maxW, 4);
-      });
-
-      const formatRow = (rowCells) => {
-        const formattedCells = rowCells.map((cell, idx) => {
-          const width = colWidths[idx];
-          return rightAlignCols.includes(idx)
-            ? padStart(cell, width)
-            : padEnd(cell, width);
-        });
-        return `| ${formattedCells.join(' | ')} |`;
-      };
-
-      const headerLine = formatRow(headers);
-      const separatorCells = colWidths.map((w, idx) => {
-        const isRight = rightAlignCols.includes(idx);
-        return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
-      });
-      const separatorLine = `| ${separatorCells.join(' | ')} |`;
-      const dataLines = tableRows.map(r => formatRow(r));
-      const mdContent = [headerLine, separatorLine, ...dataLines].join('\n');
+    } else if (isUserQueryType(lastQueryResults.type)) {
+      const headers = ['#', 'Golfer', 'Medal Count'];
+      const rows = lastQueryResults.results.map((r, i) => [String(i + 1), r.golfer, String(r.count)]);
+      const lines = [`| ${headers.join(' | ')} |`, `|:---|:---|---:|`];
+      rows.forEach(r => lines.push(`| ${r.join(' | ')} |`));
 
       if (typeof downloadMarkdownFile === 'function') {
-        downloadMarkdownFile(`${currentQueryType}_top100.md`, mdContent);
+        downloadMarkdownFile('golfer_medals_ranking.md', lines.join('\n'));
       }
     } else {
-      if (!lastQueryResults.results || lastQueryResults.results.length === 0) return;
-
-      let filtered = lastQueryResults.results;
-      if (searchText) {
-        filtered = filtered.filter(r => 
-          r.hole.toLowerCase().includes(searchText) || 
-          r.lang.toLowerCase().includes(searchText) ||
-          r.golfer.toLowerCase().includes(searchText)
-        );
-      }
-
-      const sortedRows = sortQueryData(filtered, currentQuerySortField, currentQuerySortDir).slice(0, 100);
       const headers = ['#', 'Hole', 'Language', 'Golfer', 'Bytes', 'Type'];
-      const rightAlignCols = [4, 5];
-
-      const tableRows = sortedRows.map((r, i) => [
-        String(i + 1),
-        r.hole,
-        r.lang,
-        r.golfer,
-        r.bytes.toLocaleString(),
-        r.type
-      ]);
-
-      const colWidths = headers.map((header, colIdx) => {
-        let maxW = getW(header);
-        tableRows.forEach(r => {
-          const w = getW(r[colIdx]);
-          if (w > maxW) maxW = w;
-        });
-        return Math.max(maxW, 4);
-      });
-
-      const formatRow = (rowCells) => {
-        const formattedCells = rowCells.map((cell, idx) => {
-          const width = colWidths[idx];
-          return rightAlignCols.includes(idx)
-            ? padStart(cell, width)
-            : padEnd(cell, width);
-        });
-        return `| ${formattedCells.join(' | ')} |`;
-      };
-
-      const headerLine = formatRow(headers);
-      const separatorCells = colWidths.map((w, idx) => {
-        const isRight = rightAlignCols.includes(idx);
-        return isRight ? '-'.repeat(Math.max(1, w - 1)) + ':' : ':' + '-'.repeat(Math.max(1, w - 1));
-      });
-      const separatorLine = `| ${separatorCells.join(' | ')} |`;
-      const dataLines = tableRows.map(r => formatRow(r));
-      const mdContent = [headerLine, separatorLine, ...dataLines].join('\n');
+      const rows = lastQueryResults.results.map((r, i) => [String(i + 1), r.hole, r.lang, r.golfer, `${r.bytes} B`, r.type]);
+      const lines = [`| ${headers.join(' | ')} |`, `|:---|:---|:---|:---|---:|---:|`];
+      rows.forEach(r => lines.push(`| ${r.join(' | ')} |`));
 
       if (typeof downloadMarkdownFile === 'function') {
-        downloadMarkdownFile(`${currentQueryType}_results_top100.md`, mdContent);
+        downloadMarkdownFile('query_results.md', lines.join('\n'));
       }
     }
   }

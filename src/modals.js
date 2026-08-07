@@ -1,3 +1,4 @@
+// modals.js
 /**
  * Modals & Popup Logic
  */
@@ -273,5 +274,72 @@ function showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs) {
 
   renderModalContent();
   modal.classList.remove('hidden');
+  modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+}
+
+function showLostMedalModal(eventData) {
+  let modal = document.getElementById('lostMedalModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'lostMedalModal';
+    modal.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.75); -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px); display: flex; align-items: center;
+      justify-content: center; z-index: 9999; padding: 1rem;
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const holeUrl = `https://code.golf/${encodeURIComponent(eventData.hole)}`;
+  const langUrl = `https://code.golf/${encodeURIComponent(eventData.hole)}#${encodeURIComponent(eventData.lang)}`;
+
+  const lostByList = eventData.oldHolders.map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : `<strong>${escapeHtml(u)}</strong>`).join(', ');
+  const newGolferLink = typeof getGolferLink === 'function' ? getGolferLink(eventData.newGolfer) : `<strong>${escapeHtml(eventData.newGolfer)}</strong>`;
+
+  modal.innerHTML = `
+    <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 24px; border-radius: 10px; min-width: 320px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 10px;">
+        <div>
+          <h3 style="margin: 0; color: var(--accent, #38bdf8); font-size: 1.25em;">
+            <a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link" style="color: #38bdf8; text-decoration: none;">${escapeHtml(eventData.hole)}</a>
+            (<a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="color: #4da6ff; text-decoration: none;">${escapeHtml(eventData.lang)}</a>)
+          </h3>
+          <div style="font-size: 0.85em; color: var(--text-dim, #94a3b8); margin-top: 4px;">Record Breakdown & Loss Event</div>
+        </div>
+        <button id="closeLostMedalBtn" style="background: none; border: none; color: #aaa; font-size: 1.5em; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px; font-size: 0.95rem;">
+        <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 10px 14px; border-radius: 4px;">
+          <div style="font-size: 0.8em; color: #fca5a5; font-weight: bold; text-transform: uppercase;">Previous Record (Lost)</div>
+          <div style="margin-top: 4px; font-size: 1.1em;">
+            Score: <strong>${eventData.oldDisplayHtml}</strong>
+          </div>
+          <div style="margin-top: 4px;">
+            Lost by: ${lostByList}
+          </div>
+        </div>
+
+        <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 10px 14px; border-radius: 4px;">
+          <div style="font-size: 0.8em; color: #86efac; font-weight: bold; text-transform: uppercase;">New Record (Achieved)</div>
+          <div style="margin-top: 4px; font-size: 1.1em;">
+            Score: <strong>${eventData.newDisplayHtml}</strong> <span style="font-size: 0.85em; color: #86efac;">(-${eventData.byteDiff} B)</span>
+          </div>
+          <div style="margin-top: 4px;">
+            Achieved by: ${newGolferLink}
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: var(--text-dim, #94a3b8); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+          <span>Date: ${escapeHtml(eventData.dateStr)}</span>
+          <span>Time: ${escapeHtml(eventData.formattedTime)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.querySelector('#closeLostMedalBtn')?.addEventListener('click', () => modal.classList.add('hidden'));
   modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
 }
