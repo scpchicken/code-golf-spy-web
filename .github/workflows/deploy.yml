@@ -2,7 +2,10 @@ name: Deploy src to GitHub Pages
 
 on:
   push:
-    branches: ["main"] # Or "master", depending on your default branch name
+    branches: ["main"]
+  schedule:
+    - cron: "0 0 * * *" # Runs daily at 00:00 UTC
+  workflow_dispatch:     # Allows manual trigger
 
 permissions:
   contents: read
@@ -11,7 +14,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -19,9 +22,18 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    
+    # Forces any un-updated actions to run on Node.js 24 safely
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6 # Bumped to v6 for native Node 24 support
+
+      - name: Fetch fresh API data
+        run: |
+          curl -k -L 'https://code.golf/scores/all-holes/all-langs/all' -o ./src/solutions.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -29,7 +41,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './src' # Tells GitHub to treat src/ as the root folder
+          path: './src'
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -106,7 +106,7 @@ function getScoringMode() {
   return el && el.value ? el.value.toLowerCase() : 'bytes';
 }
 
-// File Reading Helpers
+// File Reading & Fetching Helpers
 function readJsonFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -122,12 +122,21 @@ function readJsonFile(file) {
   });
 }
 
+/**
+ * Gets submission data from user file input or defaults to fetching REPO/src/solutions.json
+ */
 async function getSubmissionsData(fileInput) {
   const file = fileInput?.files?.[0];
   if (file) {
     return await readJsonFile(file);
   }
-  return null;
+
+  // Attempt auto-fetching from default relative paths to src/solutions.json
+  let data = await getOrFetchJson(null, 'solutions.json', 'solutions.json');
+  if (!data) {
+    data = await getOrFetchJson(null, '../test/solutions.json', 'solutions.json');
+  }
+  return data;
 }
 
 async function getOrFetchJson(fileInput, fetchUrl, fileName) {
@@ -143,6 +152,18 @@ async function getOrFetchJson(fileInput, fetchUrl, fileName) {
     console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}.`);
     return null;
   }
+}
+
+function downloadJsonFile(filename = 'solutions.json', data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function downloadMarkdownFile(filename, text) {

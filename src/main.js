@@ -149,7 +149,7 @@ const updateLeaderboard = () => {
 };
 
 // Initialize Sliders & Startup Dialog
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Compare Sliders (Base Min Score is manual; Chi, Lambda, Diamond auto-update)
   setupSlider('formulaSlider', 'formulaValue');
   setupSlider('chiSlider', 'chiValue', updateCompare);
@@ -162,8 +162,17 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSlider('lbLambdaSlider', 'lbLambdaValue', updateLeaderboard);
   setupSlider('lbDiamondSlider', 'lbDiamondValue', updateLeaderboard);
 
-  // Show Startup Modal
+  // Show Startup Modal conditionally (skip if src/solutions.json auto-loads)
   if (typeof initialModal !== 'undefined' && initialModal) {
-    initialModal.classList.remove('hidden');
+    try {
+      const autoData = await getOrFetchJson(null, './solutions.json', 'solutions.json') 
+      if (autoData) {
+        initialModal.classList.add('hidden');
+      } else {
+        initialModal.classList.remove('hidden');
+      }
+    } catch (err) {
+      initialModal.classList.remove('hidden');
+    }
   }
 });

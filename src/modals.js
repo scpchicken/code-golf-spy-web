@@ -295,7 +295,9 @@ function showLostMedalModal(eventData) {
   const langUrl = `https://code.golf/${encodeURIComponent(eventData.hole)}#${encodeURIComponent(eventData.lang)}`;
 
   const lostByList = eventData.oldHolders.map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : `<strong>${escapeHtml(u)}</strong>`).join(', ');
-  const newGolferLink = typeof getGolferLink === 'function' ? getGolferLink(eventData.newGolfer) : `<strong>${escapeHtml(eventData.newGolfer)}</strong>`;
+  
+  const newHoldersArr = eventData.newHolders || [eventData.newGolfer];
+  const newGolferLink = newHoldersArr.map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : `<strong>${escapeHtml(u)}</strong>`).join(', ');
 
   modal.innerHTML = `
     <div style="background: var(--card-bg, #1e293b); color: #fff; padding: 24px; border-radius: 10px; min-width: 320px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid var(--border, #334155);">

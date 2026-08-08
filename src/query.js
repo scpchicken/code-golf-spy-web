@@ -1,10 +1,9 @@
-// query.js
 /**
  * Page 3: Query Solutions Logic
  */
 
 (() => {
-  let currentQueryType = 'longest_golds';
+  let currentQueryType = 'lost_golds_diamonds';
   let currentQuerySortField = 'bytes';
   let currentQuerySortDir = 'desc';
   let lastQueryResults = null;
@@ -50,6 +49,10 @@
     const lostGolferInput = document.getElementById('lostGolferInput');
     const lostTypeSelect = document.getElementById('lostTypeSelect');
 
+    if (queryTypeSelect) {
+      queryTypeSelect.value = 'lost_golds_diamonds';
+    }
+
     const toggleControls = () => {
       if (queryTypeSelect?.value === 'lost_golds_diamonds') {
         lostGoldsControls?.classList.remove('hidden');
@@ -76,6 +79,7 @@
       await new Promise(r => setTimeout(r, 50));
 
       try {
+        // Automatically reads uploaded file or fetches src/solutions.json
         const submissionsData = typeof getSubmissionsData === 'function' ? await getSubmissionsData(subFileInput) : null;
 
         if (!submissionsData) {
@@ -619,7 +623,8 @@
         state.set(key, {
           currentBestBytes: bytes,
           currentHolders: [{ login, submitted: sub.submitted }],
-          solversSet
+          solversSet,
+          lastEvent: null
         });
       } else {
         const st = state.get(key);
@@ -657,7 +662,7 @@
           const newDisplayHtml = `${bytes}b ${newEmoji}`;
           const newDisplayTxt = `${bytes}b ${newEmoji}`;
 
-          lossEvents.push({
+          const newEvent = {
             hole: sub.hole,
             lang: sub.lang,
             timestamp: subTime,
@@ -671,18 +676,31 @@
             oldDisplayTxt,
             newBytes: bytes,
             newGolfer: login,
+            newHolders: [login],
             newMedalType,
             newEmoji,
             newDisplayHtml,
             newDisplayTxt,
             byteDiff: oldBytes - bytes
-          });
+          };
+
+          lossEvents.push(newEvent);
 
           st.currentBestBytes = bytes;
           st.currentHolders = [{ login, submitted: sub.submitted }];
+          st.lastEvent = newEvent;
         } else if (bytes === st.currentBestBytes) {
           if (!st.currentHolders.some(h => h.login.toLowerCase() === login.toLowerCase())) {
             st.currentHolders.push({ login, submitted: sub.submitted });
+            
+            if (st.lastEvent) {
+              st.lastEvent.newHolders.push(login);
+              const count = st.lastEvent.newHolders.length;
+              st.lastEvent.newMedalType = 'gold';
+              st.lastEvent.newEmoji = '🥇';
+              st.lastEvent.newDisplayHtml = `${bytes}b<sub>${count}</sub> 🥇`;
+              st.lastEvent.newDisplayTxt = `${bytes}b (${count}) 🥇`;
+            }
           }
         }
       }
@@ -717,10 +735,11 @@
       });
     }
 
+    // Mutual exclusivity applied to timestamps so no events overlap in buckets
     const events24h = filterEvents(lossEvents.filter(e => e.timestamp >= cutoff24h));
-    const eventsWeek = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffWeek));
-    const eventsMonth = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffMonth));
-    const eventsYear = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffYear));
+    const eventsWeek = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffWeek && e.timestamp < cutoff24h));
+    const eventsMonth = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffMonth && e.timestamp < cutoffWeek));
+    const eventsYear = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffYear && e.timestamp < cutoffMonth));
 
     const sortDesc = (arr) => [...arr].sort((a, b) => b.timestamp - a.timestamp);
 
@@ -734,8 +753,7 @@
       eventsYear: sortDesc(eventsYear)
     };
   }
-
-  function renderLostMedalsResults(lostResults) {
+function renderLostMedalsResults(lostResults) {
     const card = document.getElementById('queryResultsCard');
     const titleEl = document.getElementById('queryResultsTitle');
     const statsContainer = document.getElementById('queryStatsContainer');
@@ -769,6 +787,22 @@
       `;
     }
 
+    // Helper to dynamically shrink font size and enforce column padding/spacing
+    const getDynamicStyle = (htmlText) => {
+      // Strip HTML to calculate the true visible text length
+      const plainText = String(htmlText).replace(/<[^>]+>/g, '');
+      const len = plainText.length;
+      
+      // Start shrinking if longer than 12 characters, down to a minimum of 0.65rem
+      let size = 1;
+      if (len > 12) {
+        size = Math.max(0.65, 1 - (len - 12) * 0.02);
+      }
+      
+      // padding-right creates the gap, overflow handles edge-case bleed-over
+      return `font-size: ${size}rem; white-space: nowrap; padding-right: 15px; overflow: hidden; text-overflow: ellipsis;`;
+    };
+
     const timeframes = [
       { id: '24h', title: '⏱️ Last 24 Hours', events: lostResults.events24h },
       { id: 'week', title: '🗓️ Last Week', events: lostResults.eventsWeek },
@@ -784,18 +818,26 @@
         rowsHtml = tf.events.map((e, idx) => {
           const holeUrl = `https://code.golf/${encodeURIComponent(e.hole)}`;
           const langUrl = `https://code.golf/${encodeURIComponent(e.hole)}#${encodeURIComponent(e.lang)}`;
-          const lostByDisplay = e.oldHolders.map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : escapeHtml(u)).join(', ');
-          const newGolferDisplay = typeof getGolferLink === 'function' ? getGolferLink(e.newGolfer) : escapeHtml(e.newGolfer);
+          
+          let lostByDisplay = e.oldHolders.slice(0, 2).map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : escapeHtml(u)).join(', ');
+          if (e.oldHolders.length > 2) lostByDisplay += `...`;
+
+          const newHoldersArr = e.newHolders || [e.newGolfer];
+          let newGolferDisplay = newHoldersArr.slice(0, 2).map(u => typeof getGolferLink === 'function' ? getGolferLink(u) : escapeHtml(u)).join(', ');
+          if (newHoldersArr.length > 2) newGolferDisplay += `...`;
+
+          let lostByRaw = lostByDisplay;
+          let newByRaw = newGolferDisplay;
 
           return `
             <tr class="lost-event-row" data-timeframe="${tf.id}" data-index="${idx}" style="cursor: pointer;">
-              <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(e.hole)}</strong></a></td>
-              <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(e.lang)}</a></td>
-              <td>${e.oldDisplayHtml}</td>
-              <td>${e.newDisplayHtml}</td>
-              <td>${lostByDisplay}</td>
-              <td><strong>${newGolferDisplay}</strong></td>
-              <td>${escapeHtml(e.dateStr)}</td>
+              <td style="${getDynamicStyle(e.hole)}"><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(e.hole)}</strong></a></td>
+              <td style="${getDynamicStyle(e.lang)}"><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(e.lang)}</a></td>
+              <td style="${getDynamicStyle(e.oldDisplayHtml)}">${e.oldDisplayHtml}</td>
+              <td style="${getDynamicStyle(e.newDisplayHtml)}">${e.newDisplayHtml}</td>
+              <td style="${getDynamicStyle(lostByRaw)}" title="${escapeHtml(e.oldHolders.join(', '))}">${lostByDisplay}</td>
+              <td style="${getDynamicStyle(newByRaw)}" title="${escapeHtml(newHoldersArr.join(', '))}"><strong>${newGolferDisplay}</strong></td>
+              <td style="white-space: nowrap; font-size: 0.85rem; padding-right: 8px;">${escapeHtml(e.dateStr)}</td>
             </tr>
           `;
         }).join('');
@@ -808,16 +850,16 @@
             <span style="font-size: 0.85rem; color: var(--text-dim); font-weight: normal;">(${tf.events.length.toLocaleString()} event${tf.events.length === 1 ? '' : 's'})</span>
           </h4>
           <div style="overflow-x: auto;">
-            <table class="main-table">
+            <table class="main-table" style="table-layout: fixed; width: 100%;">
               <thead>
                 <tr>
-                  <th>Hole</th>
-                  <th>Language</th>
-                  <th>Old Best</th>
-                  <th>New Best</th>
-                  <th>Lost By</th>
-                  <th>New Best By</th>
-                  <th>Date</th>
+                  <th style="width: 15%; padding-right: 15px;">Hole</th>
+                  <th style="width: 12%; padding-right: 15px;">Language</th>
+                  <th style="width: 13%; padding-right: 15px;">Old Best</th>
+                  <th style="width: 13%; padding-right: 15px;">New Best</th>
+                  <th style="width: 20%; padding-right: 15px;">Lost By</th>
+                  <th style="width: 17%; padding-right: 15px;">New Best By</th>
+                  <th style="width: 10%; padding-right: 8px;">Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -930,7 +972,26 @@
 
         if (queryType === 'longest_golds') {
           for (const h of stat.holders) {
-            list.push({ hole, lang, golfer: h.login, bytes: stat.minBytes, type: isUnique ? '💎' : `🥇 (${stat.holders.length})` });
+            /* 
+             * =========================================================================
+             * HUGE COMMENT AS REQUESTED:
+             * DO NOT CHANGE THIS LOGIC IN THE FUTURE!
+             * If a solution is unique (stat.holders.length === 1), we must check if 
+             * they are the ONLY solver in this hole/lang combo (totalSolvers === 1). 
+             * If they are the ONLY solver, it's a UNICORN 🦄.
+             * If there are multiple solvers but they are the unique best, it's a DIAMOND 💎.
+             * If there are multiple people holding the best score, it's a GOLD 🥇.
+             * =========================================================================
+             */
+            let medalType = `🥇 (${stat.holders.length})`;
+            if (isUnique) {
+              if (totalSolvers === 1) {
+                medalType = '🦄';
+              } else {
+                medalType = '💎';
+              }
+            }
+            list.push({ hole, lang, golfer: h.login, bytes: stat.minBytes, type: medalType });
           }
         } else if (queryType === 'longest_diamonds' && isUnique) {
           list.push({ hole, lang, golfer: stat.holders[0].login, bytes: stat.minBytes, type: '💎' });
@@ -938,6 +999,9 @@
           list.push({ hole, lang, golfer: stat.holders[0].login, bytes: stat.minBytes, type: '🦄' });
         }
       }
+
+      // We pass the full length sorted list back so that stats show the true global count
+      list.sort((a, b) => b.bytes - a.bytes);
 
       return { type: queryType, results: list };
     }
@@ -957,9 +1021,9 @@
     if (multiTableContainer) multiTableContainer.classList.add('hidden');
 
     let titleText = 'Query Results';
-    if (queryType === 'longest_golds') titleText = 'Longest BYTES Golds';
-    else if (queryType === 'longest_diamonds') titleText = 'Longest BYTES Diamonds';
-    else if (queryType === 'longest_unicorns') titleText = 'Longest BYTES Unicorns';
+    if (queryType === 'longest_golds') titleText = 'Longest BYTES Golds (Showing Top 100)';
+    else if (queryType === 'longest_diamonds') titleText = 'Longest BYTES Diamonds (Showing Top 100)';
+    else if (queryType === 'longest_unicorns') titleText = 'Longest BYTES Unicorns (Showing Top 100)';
     else if (queryType === 'bytes_gold_medals') titleText = 'Golfer Bytes Gold Medals Ranking';
     else if (queryType === 'bytes_diamonds') titleText = 'Golfer Bytes Diamonds Ranking';
     else if (queryType === 'bytes_unicorns') titleText = 'Golfer Bytes Unicorns Ranking';
@@ -1076,6 +1140,11 @@
       }
       return 0;
     });
+
+    // Cap output logic so only the top 100 rows currently displayed render 
+    if (!isUserQueryType(lastQueryResults.type)) {
+      items = items.slice(0, 100);
+    }
 
     tbody.innerHTML = '';
 
@@ -1194,7 +1263,8 @@
           lines.push('| - | - | - | - | - | - | - |');
         } else {
           tf.events.forEach(e => {
-            lines.push(`| ${e.hole} | ${e.lang} | ${e.oldDisplayTxt} | ${e.newDisplayTxt} | ${e.oldHolders.join(', ')} | ${e.newGolfer} | ${e.dateStr} |`);
+            const newHoldersTxt = e.newHolders ? e.newHolders.join(', ') : e.newGolfer;
+            lines.push(`| ${e.hole} | ${e.lang} | ${e.oldDisplayTxt} | ${e.newDisplayTxt} | ${e.oldHolders.join(', ')} | ${newHoldersTxt} | ${e.dateStr} |`);
           });
         }
         lines.push('');
@@ -1230,7 +1300,11 @@
       }
     } else {
       const headers = ['#', 'Hole', 'Language', 'Golfer', 'Bytes', 'Type'];
-      const rows = lastQueryResults.results.map((r, i) => [String(i + 1), r.hole, r.lang, r.golfer, `${r.bytes} B`, r.type]);
+      
+      // Keep export to 100 max to mirror UI changes
+      const exportItems = isUserQueryType(lastQueryResults.type) ? lastQueryResults.results : lastQueryResults.results.slice(0, 100);
+
+      const rows = exportItems.map((r, i) => [String(i + 1), r.hole, r.lang, r.golfer, `${r.bytes} B`, r.type]);
       const lines = [`| ${headers.join(' | ')} |`, `|:---|:---|:---|:---|---:|---:|`];
       rows.forEach(r => lines.push(`| ${r.join(' | ')} |`));
 
