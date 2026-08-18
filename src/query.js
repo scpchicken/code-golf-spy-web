@@ -48,16 +48,27 @@
     const lostGoldsControls = document.getElementById('lostGoldsControls');
     const lostGolferInput = document.getElementById('lostGolferInput');
     const lostTypeSelect = document.getElementById('lostTypeSelect');
+    const mismatchControls = document.getElementById('mismatchControls');
+    const mismatchUserInput = document.getElementById('mismatchUserInput');
+    const mismatchLangInput = document.getElementById('mismatchLangInput');
 
     if (queryTypeSelect) {
       queryTypeSelect.value = 'lost_golds_diamonds';
     }
 
     const toggleControls = () => {
-      if (queryTypeSelect?.value === 'lost_golds_diamonds') {
+      const val = queryTypeSelect?.value;
+
+      if (val === 'lost_golds_diamonds') {
         lostGoldsControls?.classList.remove('hidden');
       } else {
         lostGoldsControls?.classList.add('hidden');
+      }
+
+      if (val === 'medal_mismatch') {
+        mismatchControls?.classList.remove('hidden');
+      } else {
+        mismatchControls?.classList.add('hidden');
       }
     };
 
@@ -69,6 +80,11 @@
 
     queryGoBtn.addEventListener('click', async () => {
       currentQueryType = queryTypeSelect ? queryTypeSelect.value : 'longest_golds';
+
+      if (currentQueryType === 'medal_mismatch' && !(mismatchUserInput?.value || '').trim()) {
+        alert('Please enter a username for the Medal Mismatch query.');
+        return;
+      }
 
       const subFileInput = document.getElementById('submissionsFile');
       const holesFileInput = document.getElementById('holesFile');
@@ -115,6 +131,20 @@
             medalTypeFilter
           );
           renderLostMedalsResults(lastQueryResults);
+        } else if (currentQueryType === 'medal_mismatch') {
+          const username = (mismatchUserInput?.value || '').trim();
+          const langFilter = (mismatchLangInput?.value || '').trim().toLowerCase();
+          currentQuerySortField = 'hole';
+          currentQuerySortDir = 'asc';
+          lastQueryResults = processMedalMismatch(
+            submissionsData,
+            includeExperimental,
+            holesData,
+            langsData,
+            username,
+            langFilter
+          );
+          renderMedalMismatchResults(lastQueryResults);
         } else if (isUserQueryType(currentQueryType)) {
           currentQuerySortField = 'count';
           currentQuerySortDir = 'desc';
@@ -162,8 +192,9 @@
       }
     };
 
-    lostGolferInput?.addEventListener('input', triggerLostFilterUpdate);
-    lostTypeSelect?.addEventListener('change', triggerLostFilterUpdate);
+    // Note: "Golfer Name" and "Lost Record Type" intentionally do NOT
+    // auto-recompute results on every keystroke - the user presses "Run
+    // Query" (or Ctrl+Enter) to apply changes, same as every other query type.
 
     // Search input dispatch
     document.getElementById('queryTableSearch')?.addEventListener('input', () => {
@@ -171,6 +202,8 @@
         sortAndRenderGoldsPerDayBody();
       } else if (currentQueryType === 'lost_golds_diamonds') {
         triggerLostFilterUpdate();
+      } else if (currentQueryType === 'medal_mismatch') {
+        sortAndRenderMismatchBody();
       } else {
         if (lastQueryResults) applyQueryFilterAndRender();
       }
@@ -398,47 +431,51 @@
       `;
     }
 
-    const thead = table.querySelector('thead');
-    if (thead) {
-      const renderTh = (id, label, fieldName, align = 'left') => {
-        const isCurrent = currentQuerySortField === fieldName;
-        const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
-        const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
-        return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
-      };
-
-      thead.innerHTML = `
-        <tr>
-          ${renderTh('thQDate', 'Date', 'date', 'left')}
-          ${renderTh('thQTotalBytes', 'Total Gold Bytes', 'totalBytes', 'right')}
-          ${renderTh('thQChange', 'Change', 'change', 'right')}
-          ${renderTh('thQNewGolds', 'Record Solves', 'newGoldsCount', 'right')}
-          ${renderTh('thQTopGolfer', 'Top Golfer', 'topGolfer', 'right')}
-        </tr>
-      `;
-
-      const bindQSort = (id, fieldName, defaultDir = 'desc') => {
-        const el = document.getElementById(id);
-        el?.addEventListener('click', () => {
-          if (currentQuerySortField === fieldName) {
-            currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
-          } else {
-            currentQuerySortField = fieldName;
-            currentQuerySortDir = defaultDir;
-          }
-          sortAndRenderGoldsPerDayBody();
-        });
-      };
-
-      bindQSort('thQDate', 'date', 'desc');
-      bindQSort('thQTotalBytes', 'totalBytes', 'desc');
-      bindQSort('thQChange', 'change', 'desc');
-      bindQSort('thQNewGolds', 'newGoldsCount', 'desc');
-      bindQSort('thQTopGolfer', 'topGolfer', 'asc');
-    }
-
+    renderGoldsPerDayHead(table);
     sortAndRenderGoldsPerDayBody();
     card.classList.remove('hidden');
+  }
+
+  function renderGoldsPerDayHead(table) {
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+
+    const renderTh = (id, label, fieldName, align = 'left') => {
+      const isCurrent = currentQuerySortField === fieldName;
+      const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+      return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+    };
+
+    thead.innerHTML = `
+      <tr>
+        ${renderTh('thQDate', 'Date', 'date', 'left')}
+        ${renderTh('thQTotalBytes', 'Total Gold Bytes', 'totalBytes', 'right')}
+        ${renderTh('thQChange', 'Change', 'change', 'right')}
+        ${renderTh('thQNewGolds', 'Record Solves', 'newGoldsCount', 'right')}
+        ${renderTh('thQTopGolfer', 'Top Golfer', 'topGolfer', 'right')}
+      </tr>
+    `;
+
+    const bindQSort = (id, fieldName, defaultDir = 'desc') => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        if (currentQuerySortField === fieldName) {
+          currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentQuerySortField = fieldName;
+          currentQuerySortDir = defaultDir;
+        }
+        renderGoldsPerDayHead(table);
+        sortAndRenderGoldsPerDayBody();
+      });
+    };
+
+    bindQSort('thQDate', 'date', 'desc');
+    bindQSort('thQTotalBytes', 'totalBytes', 'desc');
+    bindQSort('thQChange', 'change', 'desc');
+    bindQSort('thQNewGolds', 'newGoldsCount', 'desc');
+    bindQSort('thQTopGolfer', 'topGolfer', 'asc');
   }
 
   function sortAndRenderGoldsPerDayBody() {
@@ -1050,63 +1087,67 @@ function renderLostMedalsResults(lostResults) {
       }
     }
 
-    const thead = table.querySelector('thead');
-    if (thead) {
-      const renderTh = (id, label, fieldName, align = 'left') => {
-        const isCurrent = currentQuerySortField === fieldName;
-        const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
-        const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
-        return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
-      };
-
-      if (isUserQueryType(queryType)) {
-        thead.innerHTML = `
-          <tr>
-            <th style="width: 50px;">#</th>
-            ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
-            ${renderTh('thQCount', 'Medal Count', 'count', 'right')}
-          </tr>
-        `;
-      } else {
-        thead.innerHTML = `
-          <tr>
-            <th style="width: 50px;">#</th>
-            ${renderTh('thQHole', 'Hole', 'hole', 'left')}
-            ${renderTh('thQLang', 'Language', 'lang', 'left')}
-            ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
-            ${renderTh('thQBytes', 'Bytes', 'bytes', 'right')}
-            ${renderTh('thQType', 'Type', 'type', 'right')}
-          </tr>
-        `;
-      }
-
-      const bindQSort = (id, fieldName, defaultDir = 'desc') => {
-        const el = document.getElementById(id);
-        el?.addEventListener('click', () => {
-          if (currentQuerySortField === fieldName) {
-            currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
-          } else {
-            currentQuerySortField = fieldName;
-            currentQuerySortDir = defaultDir;
-          }
-          applyQueryFilterAndRender();
-        });
-      };
-
-      if (isUserQueryType(queryType)) {
-        bindQSort('thQGolfer', 'golfer', 'asc');
-        bindQSort('thQCount', 'count', 'desc');
-      } else {
-        bindQSort('thQHole', 'hole', 'asc');
-        bindQSort('thQLang', 'lang', 'asc');
-        bindQSort('thQGolfer', 'golfer', 'asc');
-        bindQSort('thQBytes', 'bytes', 'desc');
-        bindQSort('thQType', 'type', 'asc');
-      }
-    }
-
+    renderQHead(table, queryType);
     applyQueryFilterAndRender();
     card.classList.remove('hidden');
+  }
+
+  function renderQHead(table, queryType) {
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+
+    const renderTh = (id, label, fieldName, align = 'left') => {
+      const isCurrent = currentQuerySortField === fieldName;
+      const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+      return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+    };
+
+    if (isUserQueryType(queryType)) {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 50px;">#</th>
+          ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
+          ${renderTh('thQCount', 'Medal Count', 'count', 'right')}
+        </tr>
+      `;
+    } else {
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 50px;">#</th>
+          ${renderTh('thQHole', 'Hole', 'hole', 'left')}
+          ${renderTh('thQLang', 'Language', 'lang', 'left')}
+          ${renderTh('thQGolfer', 'Golfer', 'golfer', 'left')}
+          ${renderTh('thQBytes', 'Bytes', 'bytes', 'right')}
+          ${renderTh('thQType', 'Type', 'type', 'right')}
+        </tr>
+      `;
+    }
+
+    const bindQSort = (id, fieldName, defaultDir = 'desc') => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        if (currentQuerySortField === fieldName) {
+          currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentQuerySortField = fieldName;
+          currentQuerySortDir = defaultDir;
+        }
+        renderQHead(table, queryType);
+        applyQueryFilterAndRender();
+      });
+    };
+
+    if (isUserQueryType(queryType)) {
+      bindQSort('thQGolfer', 'golfer', 'asc');
+      bindQSort('thQCount', 'count', 'desc');
+    } else {
+      bindQSort('thQHole', 'hole', 'asc');
+      bindQSort('thQLang', 'lang', 'asc');
+      bindQSort('thQGolfer', 'golfer', 'asc');
+      bindQSort('thQBytes', 'bytes', 'desc');
+      bindQSort('thQType', 'type', 'asc');
+    }
   }
 
   function applyQueryFilterAndRender() {
@@ -1178,6 +1219,262 @@ function renderLostMedalsResults(lostResults) {
         `;
       }
 
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ==========================================================================
+     4. MEDAL MISMATCH: BYTES VS CHARS
+     Finds hole/lang combos where a specific golfer holds a medal (unicorn,
+     diamond, or gold) under one scoring mode but not the other - e.g. gold
+     in "Fibonacci" Python bytes but nothing in "Fibonacci" Python chars.
+     ========================================================================== */
+
+  function computeMedalForStat(stat, solverCount) {
+    if (!stat || stat.holders.length === 0) return '';
+    if (stat.holders.length === 1) return solverCount === 1 ? '🦄' : '💎';
+    return '🥇';
+  }
+
+  function processMedalMismatch(jsonData, includeExperimental, holesJson, langsJson, username, langFilter = '') {
+    let validHoles = null;
+    if (holesJson && Array.isArray(holesJson)) {
+      validHoles = new Set(
+        holesJson
+          .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
+          .map(h => h.id)
+      );
+    }
+
+    let validLangs = null;
+    if (langsJson && Array.isArray(langsJson)) {
+      validLangs = new Set(
+        langsJson
+          .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
+          .map(l => l.id)
+      );
+    }
+
+    const statsBytes = new Map();
+    const statsChars = new Map();
+    const usernameLower = username.trim().toLowerCase();
+
+    for (const x of jsonData) {
+      if (x.scoring !== 'bytes' && x.scoring !== 'chars') continue;
+      if (validHoles && !validHoles.has(x.hole)) continue;
+      if (validLangs && !validLangs.has(x.lang)) continue;
+      if (langFilter && x.lang.toLowerCase() !== langFilter) continue;
+
+      const key = `${x.hole}::${x.lang}`;
+      const login = x.login;
+      const loginLower = login.toLowerCase();
+      const value = Number(x.scoring === 'chars' ? (x.chars ?? x.bytes) : x.bytes);
+      const statsMap = x.scoring === 'chars' ? statsChars : statsBytes;
+
+      if (!statsMap.has(key)) {
+        statsMap.set(key, { minVal: value, holders: [{ login, loginLower }], solvers: new Set([loginLower]) });
+      } else {
+        const stat = statsMap.get(key);
+        stat.solvers.add(loginLower);
+        if (value < stat.minVal) {
+          stat.minVal = value;
+          stat.holders = [{ login, loginLower }];
+        } else if (value === stat.minVal) {
+          if (!stat.holders.some(h => h.loginLower === loginLower)) {
+            stat.holders.push({ login, loginLower });
+          }
+        }
+      }
+    }
+
+    const allKeys = new Set([...statsBytes.keys(), ...statsChars.keys()]);
+    const results = [];
+
+    for (const key of allKeys) {
+      const bStat = statsBytes.get(key) || null;
+      const cStat = statsChars.get(key) || null;
+
+      const bHas = bStat ? bStat.holders.some(h => h.loginLower === usernameLower) : false;
+      const cHas = cStat ? cStat.holders.some(h => h.loginLower === usernameLower) : false;
+
+      const bMedal = bHas ? computeMedalForStat(bStat, bStat.solvers.size) : '';
+      const cMedal = cHas ? computeMedalForStat(cStat, cStat.solvers.size) : '';
+
+      // Only surface it when the golfer's medal status actually differs
+      // between the two scoring modes (has one but not the other, or holds
+      // a different medal tier in each).
+      if (bMedal === cMedal) continue;
+
+      const [hole, lang] = key.split('::');
+
+      results.push({
+        hole,
+        lang,
+        bytesMedal: bMedal,
+        bytesValue: bStat ? bStat.minVal : null,
+        bytesHolders: bStat ? bStat.holders.filter(h => h.loginLower !== usernameLower).map(h => h.login) : [],
+        charsMedal: cMedal,
+        charsValue: cStat ? cStat.minVal : null,
+        charsHolders: cStat ? cStat.holders.filter(h => h.loginLower !== usernameLower).map(h => h.login) : []
+      });
+    }
+
+    results.sort((a, b) => a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang));
+
+    return { type: 'medal_mismatch', username: username.trim(), results };
+  }
+
+  function renderMedalMismatchResults(data) {
+    const card = document.getElementById('queryResultsCard');
+    const titleEl = document.getElementById('queryResultsTitle');
+    const statsContainer = document.getElementById('queryStatsContainer');
+    const singleTableContainer = document.getElementById('singleTableContainer');
+    const multiTableContainer = document.getElementById('multiTableContainer');
+    const table = document.getElementById('queryResultsTable');
+
+    if (!card || !table) return;
+
+    if (titleEl) titleEl.textContent = `Medal Mismatch (Bytes vs Chars): ${escapeHtml(data.username)}`;
+    if (singleTableContainer) singleTableContainer.classList.remove('hidden');
+    if (multiTableContainer) multiTableContainer.classList.add('hidden');
+
+    if (statsContainer) {
+      const bytesOnly = data.results.filter(r => r.bytesMedal && !r.charsMedal).length;
+      const charsOnly = data.results.filter(r => r.charsMedal && !r.bytesMedal).length;
+      const differing = data.results.filter(r => r.bytesMedal && r.charsMedal && r.bytesMedal !== r.charsMedal).length;
+
+      statsContainer.innerHTML = `
+        <div class="stat-box">
+          <div class="val">${data.results.length.toLocaleString()}</div>
+          <div class="lbl">Total Mismatches</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${bytesOnly.toLocaleString()}</div>
+          <div class="lbl">Bytes Only</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${charsOnly.toLocaleString()}</div>
+          <div class="lbl">Chars Only</div>
+        </div>
+        <div class="stat-box">
+          <div class="val">${differing.toLocaleString()}</div>
+          <div class="lbl">Different Medal Tier</div>
+        </div>
+      `;
+    }
+
+    renderMismatchHead(table);
+    sortAndRenderMismatchBody();
+    card.classList.remove('hidden');
+  }
+
+  function renderMismatchHead(table) {
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+
+    const renderTh = (id, label, fieldName, align = 'left') => {
+      const isCurrent = currentQuerySortField === fieldName;
+      const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+      const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+      return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+    };
+
+    thead.innerHTML = `
+      <tr>
+        ${renderTh('thMMHole', 'Hole', 'hole')}
+        ${renderTh('thMMLang', 'Language', 'lang')}
+        ${renderTh('thMMBytes', 'Bytes', 'bytesMedal', 'right')}
+        ${renderTh('thMMChars', 'Chars', 'charsMedal', 'right')}
+      </tr>
+    `;
+
+    const bindMMSort = (id, fieldName, defaultDir = 'asc') => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        if (currentQuerySortField === fieldName) {
+          currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          currentQuerySortField = fieldName;
+          currentQuerySortDir = defaultDir;
+        }
+        renderMismatchHead(table);
+        sortAndRenderMismatchBody();
+      });
+    };
+
+    bindMMSort('thMMHole', 'hole', 'asc');
+    bindMMSort('thMMLang', 'lang', 'asc');
+    bindMMSort('thMMBytes', 'bytesMedal', 'desc');
+    bindMMSort('thMMChars', 'charsMedal', 'desc');
+  }
+
+  function sortAndRenderMismatchBody() {
+    const tbody = document.getElementById('queryResultsBody');
+    if (!tbody || !lastQueryResults || lastQueryResults.type !== 'medal_mismatch') return;
+
+    const searchText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+    let items = [...lastQueryResults.results];
+
+    if (searchText) {
+      items = items.filter(r =>
+        r.hole.toLowerCase().includes(searchText) ||
+        r.lang.toLowerCase().includes(searchText)
+      );
+    }
+
+    items.sort((a, b) => {
+      if (currentQuerySortField === 'hole') {
+        const c = a.hole.localeCompare(b.hole);
+        if (c !== 0) return currentQuerySortDir === 'asc' ? c : -c;
+        return a.lang.localeCompare(b.lang);
+      }
+      if (currentQuerySortField === 'lang') {
+        const c = a.lang.localeCompare(b.lang);
+        if (c !== 0) return currentQuerySortDir === 'asc' ? c : -c;
+        return a.hole.localeCompare(b.hole);
+      }
+
+      // Sort by the actual bytes/chars value. Rows with no value for this
+      // mode (null) always sink to the bottom, regardless of sort direction.
+      const field = currentQuerySortField === 'charsMedal' ? 'charsValue' : 'bytesValue';
+      const valA = a[field];
+      const valB = b[field];
+      const aNull = valA === null || valA === undefined;
+      const bNull = valB === null || valB === undefined;
+
+      if (aNull && bNull) return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang);
+      if (aNull) return 1;
+      if (bNull) return -1;
+
+      if (valA !== valB) return currentQuerySortDir === 'desc' ? valB - valA : valA - valB;
+      return a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang);
+    });
+
+    tbody.innerHTML = '';
+
+    items.forEach(r => {
+      const tr = document.createElement('tr');
+      const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
+      const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
+
+      const renderCell = (medal, value, holders) => {
+        if (medal) {
+          return `<span class="medal">${medal}</span> <strong>${(value ?? 0).toLocaleString()}</strong>`;
+        }
+        if (value !== null && value !== undefined) {
+          let holderTxt = holders.slice(0, 2).map(h => typeof getGolferLink === 'function' ? getGolferLink(h) : escapeHtml(h)).join(', ');
+          if (holders.length > 2) holderTxt += '…';
+          return `<span style="color: var(--text-dim);">— ${holderTxt ? `(held by ${holderTxt}, ${value.toLocaleString()})` : ''}</span>`;
+        }
+        return `<span style="color: var(--text-dim);">—</span>`;
+      };
+
+      tr.innerHTML = `
+        <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a></td>
+        <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(r.lang)}</a></td>
+        <td style="text-align: right;">${renderCell(r.bytesMedal, r.bytesValue, r.bytesHolders)}</td>
+        <td style="text-align: right;">${renderCell(r.charsMedal, r.charsValue, r.charsHolders)}</td>
+      `;
       tbody.appendChild(tr);
     });
   }
@@ -1288,6 +1585,30 @@ function renderLostMedalsResults(lostResults) {
 
       if (typeof downloadMarkdownFile === 'function') {
         downloadMarkdownFile('golds_per_day.md', lines.join('\n'));
+      }
+    } else if (currentQueryType === 'medal_mismatch') {
+      const headers = ['Hole', 'Language', 'Bytes', 'Chars'];
+      const cellText = (medal, value, holders) => {
+        if (medal) return `${medal} ${value.toLocaleString()}`;
+        if (value !== null && value !== undefined) {
+          const holderTxt = holders.length ? ` (${holders.join(', ')})` : '';
+          return `- ${value.toLocaleString()}${holderTxt}`;
+        }
+        return '-';
+      };
+
+      const rows = lastQueryResults.results.map(r => [
+        r.hole,
+        r.lang,
+        cellText(r.bytesMedal, r.bytesValue, r.bytesHolders),
+        cellText(r.charsMedal, r.charsValue, r.charsHolders)
+      ]);
+
+      const lines = [`| ${headers.join(' | ')} |`, `|:---|:---|---:|---:|`];
+      rows.forEach(r => lines.push(`| ${r.join(' | ')} |`));
+
+      if (typeof downloadMarkdownFile === 'function') {
+        downloadMarkdownFile(`medal_mismatch_${lastQueryResults.username}.md`, lines.join('\n'));
       }
     } else if (isUserQueryType(lastQueryResults.type)) {
       const headers = ['#', 'Golfer', 'Medal Count'];

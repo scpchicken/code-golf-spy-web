@@ -11,6 +11,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Code Golf Leaderboard & Comparison Tool</title>
   <link rel="stylesheet" href="style.css">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-HQQRS8EE5T"></script>
+  <script>window.dataLayer = window.dataLayer || [];function gtag(){
+  dataLayer.push(arguments);};gtag('js', new Date());gtag('config', 'G-HQQRS8EE5T');</script>
 </head>
 <body>
   <!-- Full-Width Top Navigation Bar -->
@@ -351,6 +354,7 @@
               <option value="bytes_unicorns">Bytes Unicorns</option>
               <option value="total_bytes_of_golds_per_day">Total BYTES of Golds Per Day</option>
               <option value="lost_golds_diamonds">Lost Diamonds / Golds / Unicorns</option>
+              <option value="medal_mismatch">Medal Mismatch: Bytes vs Chars</option>
             </select>
           </div>
 
@@ -368,6 +372,18 @@
                 <option value="unicorns">Lost Unicorns 🦄 Only</option>
                 <option value="golds">Lost Golds 🥇 Only</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Dynamic Medal Mismatch Filter Controls -->
+          <div id="mismatchControls" class="form-group hidden" style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+              <label for="mismatchUserInput">Username (Required)</label>
+              <input type="text" id="mismatchUserInput" placeholder="e.g. scpchicken">
+            </div>
+            <div>
+              <label for="mismatchLangInput">Language (Optional)</label>
+              <input type="text" id="mismatchLangInput" placeholder="e.g. Python">
             </div>
           </div>
         </div>
