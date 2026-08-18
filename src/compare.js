@@ -5,6 +5,249 @@
 let currentExclusiveSortField = 'goldHolders';
 let currentExclusiveSortDir = 'desc';
 
+/**
+ * ==========================================================================
+ * Shared Language / Experimental Filter (used by compare.js, leaderboard.js,
+ * and query.js). Replaces the old single "Include Experimental" checkbox
+ * with a dropdown offering four modes:
+ *   - default:     exclude experimental holes & langs (previous unchecked state)
+ *   - experimental: include experimental holes & langs (previous checked state)
+ *   - permitted:   only the langs the user explicitly checks are allowed
+ *   - banned:      every lang EXCEPT the ones the user checks is allowed
+ * Permitted/Banned only affect language filtering; hole filtering still
+ * follows the default/experimental setting.
+ * ==========================================================================
+ */
+let langFilterMode = 'default'; // 'default' | 'experimental' | 'permitted' | 'banned'
+let permittedLangsSet = new Set();
+let bannedLangsSet = new Set();
+let langFilterModalMode = null;
+let cachedLangsForModal = null;
+
+function computeValidHoles(holesJson) {
+  if (!holesJson || !Array.isArray(holesJson)) return null;
+  const includeExperimentalHoles = langFilterMode === 'experimental';
+  return new Set(
+    holesJson
+      .filter(h => includeExperimentalHoles || h.experiment === null || h.experiment === undefined)
+      .map(h => h.id)
+  );
+}
+
+function computeValidLangs(langsJson) {
+  if (!langsJson || !Array.isArray(langsJson)) return null;
+
+  if (langFilterMode === 'permitted') {
+    return new Set(langsJson.filter(l => permittedLangsSet.has(l.id)).map(l => l.id));
+  }
+
+  if (langFilterMode === 'banned') {
+    return new Set(langsJson.filter(l => !bannedLangsSet.has(l.id)).map(l => l.id));
+  }
+
+  const includeExperimentalLangs = langFilterMode === 'experimental';
+  return new Set(
+    langsJson
+      .filter(l => includeExperimentalLangs || l.experiment === null || l.experiment === undefined)
+      .map(l => l.id)
+  );
+}
+
+// Non-experimental langs first (alphabetical), then experimental langs (alphabetical).
+function sortLangsForModal(langsJson) {
+  return [...langsJson].sort((a, b) => {
+    const aExp = !(a.experiment === null || a.experiment === undefined);
+    const bExp = !(b.experiment === null || b.experiment === undefined);
+    if (aExp !== bExp) return aExp ? 1 : -1;
+    const aName = a.name || a.id;
+    const bName = b.name || b.id;
+    return aName.localeCompare(bName);
+  });
+}
+
+function updateLangFilterEditButton() {
+  const editBtn = document.getElementById('editLangFilterBtn');
+  if (!editBtn) return;
+
+  if (langFilterMode === 'permitted') {
+    editBtn.classList.remove('hidden');
+    editBtn.textContent = `Edit Permitted Languages (${permittedLangsSet.size})`;
+  } else if (langFilterMode === 'banned') {
+    editBtn.classList.remove('hidden');
+    editBtn.textContent = `Edit Banned Languages (${bannedLangsSet.size})`;
+  } else {
+    editBtn.classList.add('hidden');
+  }
+}
+
+function revertLangFilterSelect() {
+  const select = document.getElementById('langFilterModeSelect');
+  if (select) select.value = langFilterMode;
+}
+
+async function openLangFilterModal(mode) {
+  langFilterModalMode = mode;
+
+  const modal = document.getElementById('langFilterModal');
+  const title = document.getElementById('langFilterModalTitle');
+  const searchInput = document.getElementById('langFilterSearchInput');
+  if (!modal) return;
+
+  if (title) title.textContent = mode === 'permitted' ? 'Select Permitted Languages' : 'Select Banned Languages';
+  if (searchInput) searchInput.value = '';
+
+  showLoading();
+  let langsJson;
+  try {
+    const langsFileInput = document.getElementById('langsFile');
+    langsJson = await getOrFetchJson(langsFileInput, 'https://code.golf/api/langs', 'langs.json');
+  } catch (err) {
+    hideLoading();
+    alert('Failed to load languages: ' + err.message);
+    revertLangFilterSelect();
+    return;
+  }
+  hideLoading();
+
+  if (!langsJson || !Array.isArray(langsJson) || langsJson.length === 0) {
+    alert('No language data available to select from.');
+    revertLangFilterSelect();
+    return;
+  }
+
+  cachedLangsForModal = langsJson;
+  renderLangFilterList(langsJson, mode);
+  modal.classList.remove('hidden');
+}
+
+// Builds the FULL list once (every language, both groups). Searching only
+// toggles visibility of rows/sections via CSS - it never removes checkboxes
+// from the DOM, so checked/unchecked state survives typing into the search
+// box and is preserved whether or not a row is currently visible.
+function renderLangFilterList(langsJson, mode) {
+  const listContainer = document.getElementById('langFilterListContainer');
+  if (!listContainer) return;
+
+  const sorted = sortLangsForModal(langsJson);
+  const selectedSet = mode === 'permitted' ? permittedLangsSet : bannedLangsSet;
+
+  // First-time defaults: Permitted starts pre-checked with the non-experimental
+  // langs (mirrors the old default filter); Banned starts with nothing checked.
+  const isFreshPermitted = mode === 'permitted' && selectedSet.size === 0;
+
+  const groups = { standard: [], experimental: [] };
+  sorted.forEach(l => {
+    const isExperimental = !(l.experiment === null || l.experiment === undefined);
+    (isExperimental ? groups.experimental : groups.standard).push(l);
+  });
+
+  const renderGroup = (label, langs) => {
+    if (langs.length === 0) return '';
+    const rows = langs.map(l => {
+      const displayLabel = l.name || l.id;
+      const checked = isFreshPermitted ? (label === 'Standard') : selectedSet.has(l.id);
+      const searchKey = `${displayLabel} ${l.id}`.toLowerCase();
+      return `
+        <label class="lang-filter-row" data-search="${searchKey}" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; cursor: pointer;">
+          <input type="checkbox" class="lang-filter-checkbox" data-lang-id="${l.id}" ${checked ? 'checked' : ''} style="accent-color: var(--accent); width: 1rem; height: 1rem; cursor: pointer;">
+          <span>${displayLabel}</span>
+        </label>
+      `;
+    }).join('');
+
+    return `
+      <div class="lang-filter-section" data-section="${label.toLowerCase()}">
+        <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin: 0 0 0.35rem 0;">${label}</div>
+        ${rows}
+      </div>
+    `;
+  };
+
+  listContainer.innerHTML = renderGroup('Standard', groups.standard) + renderGroup('Experimental', groups.experimental);
+}
+
+function filterLangFilterList(filterText) {
+  const listContainer = document.getElementById('langFilterListContainer');
+  if (!listContainer) return;
+
+  const lower = filterText.trim().toLowerCase();
+
+  listContainer.querySelectorAll('.lang-filter-section').forEach(section => {
+    let anyVisible = false;
+    section.querySelectorAll('.lang-filter-row').forEach(row => {
+      const match = !lower || row.dataset.search.includes(lower);
+      row.style.display = match ? 'flex' : 'none';
+      if (match) anyVisible = true;
+    });
+    section.style.display = anyVisible ? '' : 'none';
+  });
+}
+
+document.getElementById('langFilterModeSelect')?.addEventListener('change', (e) => {
+  const newMode = e.target.value;
+
+  if (newMode === 'permitted' || newMode === 'banned') {
+    openLangFilterModal(newMode);
+  } else {
+    langFilterMode = newMode;
+    updateLangFilterEditButton();
+  }
+});
+
+document.getElementById('editLangFilterBtn')?.addEventListener('click', () => {
+  if (langFilterMode === 'permitted' || langFilterMode === 'banned') {
+    openLangFilterModal(langFilterMode);
+  }
+});
+
+document.getElementById('langFilterSearchInput')?.addEventListener('input', (e) => {
+  filterLangFilterList(e.target.value);
+});
+
+// Select All / Select None only affect rows currently visible (i.e. matching
+// the active search), so a search-then-select-all doesn't touch languages
+// that are filtered out of view.
+document.getElementById('langFilterSelectAllBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('#langFilterListContainer .lang-filter-row').forEach(row => {
+    if (row.style.display !== 'none') {
+      const cb = row.querySelector('.lang-filter-checkbox');
+      if (cb) cb.checked = true;
+    }
+  });
+});
+
+document.getElementById('langFilterSelectNoneBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('#langFilterListContainer .lang-filter-row').forEach(row => {
+    if (row.style.display !== 'none') {
+      const cb = row.querySelector('.lang-filter-checkbox');
+      if (cb) cb.checked = false;
+    }
+  });
+});
+
+document.getElementById('langFilterCancelBtn')?.addEventListener('click', () => {
+  document.getElementById('langFilterModal')?.classList.add('hidden');
+  revertLangFilterSelect();
+});
+
+document.getElementById('langFilterApplyBtn')?.addEventListener('click', () => {
+  // Reads every checkbox regardless of current search filter, so anything
+  // hidden by a search term keeps whatever state it already had.
+  const checkedIds = new Set(
+    Array.from(document.querySelectorAll('#langFilterListContainer .lang-filter-checkbox:checked')).map(cb => cb.dataset.langId)
+  );
+
+  if (langFilterModalMode === 'permitted') {
+    permittedLangsSet = checkedIds;
+  } else if (langFilterModalMode === 'banned') {
+    bannedLangsSet = checkedIds;
+  }
+
+  langFilterMode = langFilterModalMode;
+  document.getElementById('langFilterModal')?.classList.add('hidden');
+  updateLangFilterEditButton();
+});
+
 document.getElementById('goBtn')?.addEventListener('click', async () => {
   const u1Name = document.getElementById('user1Input')?.value.trim() || '';
   const u2Name = document.getElementById('user2Input')?.value.trim() || '';
@@ -26,7 +269,6 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
   const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
-  const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
 
   if (!u1Name) {
     alert("Please specify Username 1.");
@@ -61,8 +303,7 @@ document.getElementById('goBtn')?.addEventListener('click', async () => {
       diamondBonus,
       langFilter,
       holesJson: holesData,
-      langsJson: langsData,
-      includeExperimental
+      langsJson: langsData
     });
 
     renderCompareResults(lastCompareResults);
@@ -86,8 +327,7 @@ function processCompareData({
   diamondBonus = 0,
   langFilter, 
   holesJson, 
-  langsJson, 
-  includeExperimental 
+  langsJson
 }) {
   const u1Lower = u1Name.toLowerCase();
   const u2Lower = u2Name ? u2Name.toLowerCase() : null;
@@ -97,23 +337,8 @@ function processCompareData({
   const offset2 = isFlat1000 ? 0 : minScore / (1000 - minScore);
   const offset1 = isFlat1000 ? 0 : offset2 - 1;
 
-  let validHoles = null;
-  if (holesJson && Array.isArray(holesJson)) {
-    validHoles = new Set(
-      holesJson
-        .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
-        .map(h => h.id)
-    );
-  }
-
-  let validLangs = null;
-  if (langsJson && Array.isArray(langsJson)) {
-    validLangs = new Set(
-      langsJson
-        .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
-        .map(l => l.id)
-    );
-  }
+  const validHoles = computeValidHoles(holesJson);
+  const validLangs = computeValidLangs(langsJson);
 
   const globalHoleMin = new Map();
   const globalLangStats = new Map();

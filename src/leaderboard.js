@@ -11,7 +11,6 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
-  const includeExperimental = document.getElementById('experimentalCheck')?.checked ?? false;
 
   if (!inputVal) {
     alert("Please enter at least one username.");
@@ -45,7 +44,6 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       targetUsers,
       holesData,
       langsData,
-      includeExperimental,
       minScore,
       chiExponent,
       lambdaExponent
@@ -62,29 +60,14 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   }
 });
 
-function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, includeExperimental, minScore = 750, chiExponent = 1, lambdaExponent = 1000) {
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, minScore = 750, chiExponent = 1, lambdaExponent = 1000) {
   const targetMap = new Map();
   targetUsers.forEach((u, index) => {
     targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
   });
 
-  let validHoles = null;
-  if (holesJson && Array.isArray(holesJson)) {
-    validHoles = new Set(
-      holesJson
-        .filter(h => includeExperimental || h.experiment === null || h.experiment === undefined)
-        .map(h => h.id)
-    );
-  }
-
-  let validLangs = null;
-  if (langsJson && Array.isArray(langsJson)) {
-    validLangs = new Set(
-      langsJson
-        .filter(l => includeExperimental || l.experiment === null || l.experiment === undefined)
-        .map(l => l.id)
-    );
-  }
+  const validHoles = computeValidHoles(holesJson);
+  const validLangs = computeValidLangs(langsJson);
 
   const globalHoleMin = new Map();
   const globalLangStats = new Map();
