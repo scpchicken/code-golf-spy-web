@@ -10,6 +10,9 @@
   let cachedSubmissionsData = null;
   let cachedHolesData = null;
   let cachedLangsData = null;
+  let solutionHistoryAllResults = null;
+  let solutionHistoryCurrentPage = 1;
+  const SOLUTIONS_PER_PAGE = 100;
 
   // Safe HTML Escape Helper
   function escapeHtml(str) {
@@ -35,6 +38,18 @@
     return str.substring(0, 10);
   }
 
+  // Helper: parse submission dates with full timestamp including milliseconds (for solution history)
+  function parseDateStrWithMs(submitted) {
+    if (!submitted) return 'Unknown';
+    if (typeof submitted === 'number') {
+      const d = new Date(submitted < 1e11 ? submitted * 1000 : submitted);
+      return d.toISOString();
+    }
+    const str = String(submitted);
+    if (str.includes('T')) return str;
+    return str;
+  }
+
   // Check if current query type is a user medal/count aggregation query
   function isUserQueryType(type) {
     return ['bytes_gold_medals', 'bytes_diamonds', 'bytes_unicorns'].includes(type);
@@ -50,6 +65,8 @@
     const mismatchControls = document.getElementById('mismatchControls');
     const mismatchUserInput = document.getElementById('mismatchUserInput');
     const mismatchLangInput = document.getElementById('mismatchLangInput');
+    const solutionHistoryControls = document.getElementById('solutionHistoryControls');
+    const solutionHistoryUserInput = document.getElementById('solutionHistoryUserInput');
 
     if (queryTypeSelect) {
       queryTypeSelect.value = 'lost_golds_diamonds';
@@ -68,6 +85,12 @@
         mismatchControls?.classList.remove('hidden');
       } else {
         mismatchControls?.classList.add('hidden');
+      }
+
+      if (val === 'solution_history') {
+        solutionHistoryControls?.classList.remove('hidden');
+      } else {
+        solutionHistoryControls?.classList.add('hidden');
       }
     };
 
@@ -140,6 +163,13 @@
             langFilter
           );
           renderMedalMismatchResults(lastQueryResults);
+        } else if (currentQueryType === 'solution_history') {
+          const userFilter = (solutionHistoryUserInput?.value || '').trim().toLowerCase();
+          solutionHistoryCurrentPage = 1;
+          currentQuerySortField = 'submitted';
+          currentQuerySortDir = 'desc';
+          solutionHistoryAllResults = processSolutionHistory(submissionsData, userFilter);
+          renderSolutionHistoryResults();
         } else if (isUserQueryType(currentQueryType)) {
           currentQuerySortField = 'count';
           currentQuerySortDir = 'desc';
@@ -1246,6 +1276,166 @@ function renderLostMedalsResults(lostResults) {
     results.sort((a, b) => a.hole.localeCompare(b.hole) || a.lang.localeCompare(b.lang));
 
     return { type: 'medal_mismatch', username: username.trim(), results };
+  }
+
+  function processSolutionHistory(jsonData, userFilter = '') {
+    // Filter to only bytes submissions, sorted by date descending (most recent first)
+    let results = jsonData.filter(x => x.scoring === 'bytes');
+
+    if (userFilter) {
+      results = results.filter(x => x.login.toLowerCase().includes(userFilter));
+    }
+
+    // Sort by submitted date descending (most recent first)
+    results.sort((a, b) => {
+      const dateA = new Date(a.submitted || 0).getTime();
+      const dateB = new Date(b.submitted || 0).getTime();
+      return dateB - dateA;
+    });
+
+    return {
+      type: 'solution_history',
+      userFilter: userFilter,
+      results: results
+    };
+  }
+
+  function renderSolutionHistoryResults() {
+    const card = document.getElementById('queryResultsCard');
+    const titleEl = document.getElementById('queryResultsTitle');
+    const statsContainer = document.getElementById('queryStatsContainer');
+    const singleTableContainer = document.getElementById('singleTableContainer');
+    const multiTableContainer = document.getElementById('multiTableContainer');
+    const table = document.getElementById('queryResultsTable');
+    const thead = table?.querySelector('thead');
+    const tbody = document.getElementById('queryResultsBody');
+
+    if (!card || !table || !tbody || !solutionHistoryAllResults) return;
+
+    if (titleEl) {
+      titleEl.textContent = solutionHistoryAllResults.userFilter 
+        ? `Solution History (Bytes): ${escapeHtml(solutionHistoryAllResults.userFilter)}`
+        : 'Solution History (Bytes)';
+    }
+
+    if (statsContainer) statsContainer.innerHTML = '';
+    if (singleTableContainer) singleTableContainer.classList.remove('hidden');
+    if (multiTableContainer) multiTableContainer.classList.add('hidden');
+
+    // Set up proper headers for solution history with sorting
+    if (thead) {
+      const renderTh = (id, label, fieldName, align = 'left') => {
+        const isCurrent = currentQuerySortField === fieldName;
+        const arrow = isCurrent ? (currentQuerySortDir === 'desc' ? ' ▼' : ' ▲') : '';
+        const colorStyle = isCurrent ? 'color: #38bdf8;' : 'color: inherit;';
+        return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
+      };
+
+      thead.innerHTML = `
+        <tr>
+          <th style="width: 50px;">#</th>
+          ${renderTh('thSHole', 'Hole', 'hole', 'left')}
+          ${renderTh('thSLang', 'Language', 'lang', 'left')}
+          ${renderTh('thSGolfer', 'Golfer', 'login', 'left')}
+          ${renderTh('thSBytes', 'Bytes', 'bytes', 'right')}
+          ${renderTh('thSDate', 'Date Submitted', 'submitted', 'left')}
+        </tr>
+      `;
+
+      const bindSHSort = (id, fieldName, defaultDir = 'desc') => {
+        const el = document.getElementById(id);
+        el?.addEventListener('click', () => {
+          if (currentQuerySortField === fieldName) {
+            currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+          } else {
+            currentQuerySortField = fieldName;
+            currentQuerySortDir = defaultDir;
+          }
+          renderSolutionHistoryResults();
+        });
+      };
+
+      bindSHSort('thSHole', 'hole', 'asc');
+      bindSHSort('thSLang', 'lang', 'asc');
+      bindSHSort('thSGolfer', 'login', 'asc');
+      bindSHSort('thSBytes', 'bytes', 'desc');
+      bindSHSort('thSDate', 'submitted', 'desc');
+    }
+
+    // Apply sorting to results
+    let sortedResults = [...solutionHistoryAllResults.results];
+    sortedResults.sort((a, b) => {
+      let valA = a[currentQuerySortField];
+      let valB = b[currentQuerySortField];
+
+      if (currentQuerySortField === 'submitted') {
+        valA = new Date(valA || 0).getTime();
+        valB = new Date(valB || 0).getTime();
+      }
+
+      if (typeof valA === 'string') {
+        const comp = currentQuerySortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        if (comp !== 0) return comp;
+      } else {
+        if (valA !== valB) return currentQuerySortDir === 'desc' ? valB - valA : valA - valB;
+      }
+      return 0;
+    });
+
+    // Calculate display range
+    const startIdx = (solutionHistoryCurrentPage - 1) * SOLUTIONS_PER_PAGE;
+    const endIdx = startIdx + SOLUTIONS_PER_PAGE;
+    const displayItems = sortedResults.slice(startIdx, endIdx);
+    const hasMorePages = endIdx < sortedResults.length;
+
+    // Render table rows
+    tbody.innerHTML = '';
+    displayItems.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      const rowNum = startIdx + idx + 1;
+      const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
+      const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
+      const dateStr = parseDateStrWithMs(r.submitted);
+      
+      tr.innerHTML = `
+        <td>${rowNum}</td>
+        <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a></td>
+        <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(r.lang)}</a></td>
+        <td>${typeof getGolferLink === 'function' ? getGolferLink(r.login) : escapeHtml(r.login)}</td>
+        <td style="text-align: right;"><strong>${r.bytes} B</strong></td>
+        <td>${escapeHtml(dateStr)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Remove old load more button if it exists
+    const oldLoadMoreContainer = document.getElementById('solutionHistoryLoadMoreContainer');
+    if (oldLoadMoreContainer) oldLoadMoreContainer.remove();
+
+    // Add load more button if there are more pages
+    if (hasMorePages) {
+      const loadMoreContainer = document.createElement('div');
+      loadMoreContainer.id = 'solutionHistoryLoadMoreContainer';
+      loadMoreContainer.style.cssText = 'margin-top: 1.5rem; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;';
+      
+      const loadMoreBtn = document.createElement('button');
+      loadMoreBtn.className = 'btn-submit';
+      const totalPages = Math.ceil(solutionHistoryAllResults.results.length / SOLUTIONS_PER_PAGE);
+      loadMoreBtn.textContent = `Load More (Page ${solutionHistoryCurrentPage + 1} of ${totalPages})`;
+      loadMoreBtn.addEventListener('click', () => {
+        solutionHistoryCurrentPage++;
+        renderSolutionHistoryResults();
+        // Scroll to table
+        setTimeout(() => {
+          table.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+      });
+      
+      loadMoreContainer.appendChild(loadMoreBtn);
+      table.parentElement.after(loadMoreContainer);
+    }
+
+    card.classList.remove('hidden');
   }
 
   function renderMedalMismatchResults(data) {
