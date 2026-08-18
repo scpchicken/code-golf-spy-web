@@ -4,6 +4,7 @@
 
 document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const inputVal = document.getElementById('leaderboardUsersInput')?.value.trim() || '';
+  const bannedInputVal = document.getElementById('lbBannedUsersInput')?.value.trim() || '';
   const minScore = parseFloat(document.getElementById('lbFormulaValue')?.textContent || 750);
   const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
   const lambdaExponent = parseFloat(document.getElementById('lbLambdaSlider')?.value || 1000);
@@ -40,6 +41,11 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       .map(u => u.trim())
       .filter(Boolean);
 
+    const bannedUsers = bannedInputVal
+      .split(',')
+      .map(u => u.trim())
+      .filter(Boolean);
+
     lastLeaderboardResults = processLeaderboardData(
       submissionsData,
       targetUsers,
@@ -48,7 +54,8 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       minScore,
       chiExponent,
       lambdaExponent,
-      langFilter
+      langFilter,
+      bannedUsers
     );
 
     currentLbSortField = 'points';
@@ -62,11 +69,20 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   }
 });
 
-function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, minScore = 750, chiExponent = 1, lambdaExponent = 1000, langFilter = '') {
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, minScore = 750, chiExponent = 1, lambdaExponent = 1000, langFilter = '', bannedUsers = []) {
+  const bannedSet = new Set(bannedUsers.map(u => u.toLowerCase()));
+
+  // Banned golfers are dropped from the ranking list itself, and their
+  // submissions are excluded before any global stats (hole minimums, lang
+  // minimums, solution counts, diamonds) are computed - so a ban removes
+  // them from score calculation entirely, for everyone, not just from the
+  // results table.
   const targetMap = new Map();
-  targetUsers.forEach((u, index) => {
-    targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
-  });
+  targetUsers
+    .filter(u => !bannedSet.has(u.toLowerCase()))
+    .forEach((u, index) => {
+      targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
+    });
 
   const validHoles = computeValidHoles(holesJson);
   const validLangs = computeValidLangs(langsJson);
@@ -84,6 +100,7 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, min
     const loginLower = login.toLowerCase();
     const byte = Number(x.bytes);
 
+    if (bannedSet.has(loginLower)) continue;
     if (langFilter && lang.toLowerCase() !== langFilter) continue;
     if (validHoles && !validHoles.has(hole)) continue;
     if (validLangs && !validLangs.has(lang)) continue;
