@@ -182,7 +182,15 @@ function processCompareData({
       const place = strictlyFewer + 1;
 
       let medal = "";
-      if (place === 1) medal = (tiedForFirst === 1) ? "💎" : "🥇";
+      if (place === 1) {
+        if (tiedForFirst === 1) {
+          // Unicorn 🦄: unique best AND the only solver of this hole/lang combo.
+          // Otherwise it's a regular Diamond 💎 (unique best, but others also solved it).
+          medal = (users.length === 1) ? "🦄" : "💎";
+        } else {
+          medal = "🥇";
+        }
+      }
       else if (place === 2) medal = "🥈";
       else if (place === 3) medal = "🥉";
 
@@ -199,10 +207,10 @@ function processCompareData({
     const medal = medalsMap.get(userLangKey) || "";
 
     if (loginLower === u1Lower) {
-      if (medal === "💎") { u1Diamonds++; u1Golds++; }
+      if (medal === "💎" || medal === "🦄") { u1Diamonds++; u1Golds++; }
       else if (medal === "🥇") u1Golds++;
     } else if (hasUser2 && loginLower === u2Lower) {
-      if (medal === "💎") { u2Diamonds++; u2Golds++; }
+      if (medal === "💎" || medal === "🦄") { u2Diamonds++; u2Golds++; }
       else if (medal === "🥇") u2Golds++;
     }
   }
@@ -217,14 +225,14 @@ function processCompareData({
       const u1Medal = medalsMap.get(`${key}::${u1Lower}`) || "";
       const u2Medal = medalsMap.get(`${key}::${u2Lower}`) || "";
 
-      const u2HasGold = u2Medal === "🥇" || u2Medal === "💎";
-      const u1HasGold = u1Medal === "🥇" || u1Medal === "💎";
+      const u2HasGold = u2Medal === "🥇" || u2Medal === "💎" || u2Medal === "🦄";
+      const u1HasGold = u1Medal === "🥇" || u1Medal === "💎" || u1Medal === "🦄";
 
       if (u2HasGold && !u1HasGold) {
         let goldHolders = 0;
         for (const u of users) {
           const m = medalsMap.get(`${key}::${u.login}`);
-          if (m === "🥇" || m === "💎") {
+          if (m === "🥇" || m === "💎" || m === "🦄") {
             goldHolders++;
           }
         }
@@ -270,9 +278,9 @@ function processCompareData({
 
     candidates.sort((a, b) => {
       if (a.point !== b.point) return a.point - b.point;
-      const medalRank = { '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
-      const rankA = medalRank[a.medal] || 5;
-      const rankB = medalRank[b.medal] || 5;
+      const medalRank = { '🦄': 0, '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
+      const rankA = medalRank[a.medal] ?? 5;
+      const rankB = medalRank[b.medal] ?? 5;
       if (rankA !== rankB) return rankB - rankA;
       if (a.loginByte !== b.loginByte) return b.loginByte - a.loginByte;
       return b.lang.localeCompare(a.lang);
@@ -292,15 +300,17 @@ function processCompareData({
 
     const allMedals = candidates.filter(c => c.medal !== "").sort(compareMedalCandidates);
 
-    let dCount = 0, gCount = 0, sCount = 0, bCount = 0;
+    let dCount = 0, gCount = 0, sCount = 0, bCount = 0, uCount = 0;
     allMedals.forEach(m => {
-      if (m.medal === '💎') { dCount++; gCount++; }
+      if (m.medal === '🦄') { uCount++; dCount++; gCount++; }
+      else if (m.medal === '💎') { dCount++; gCount++; }
       else if (m.medal === '🥇') gCount++;
       else if (m.medal === '🥈') sCount++;
       else if (m.medal === '🥉') bCount++;
     });
 
     const asciiParts = [];
+    if (uCount > 0) asciiParts.push(`${uCount}U`);
     if (dCount > 0) asciiParts.push(`${dCount}D`);
     if (gCount > 0) asciiParts.push(`${gCount}G`);
     if (sCount > 0) asciiParts.push(`${sCount}S`);
@@ -710,6 +720,17 @@ function sortAndRenderCompareTable(rows, sortField, sortDir, hasUser2, scoringMo
       const u1LangsJson = escapeHtml(JSON.stringify(r.u1AllLangs || []));
       const u2LangsJson = escapeHtml(JSON.stringify(r.u2AllLangs || []));
 
+      // Raw (non-HTML-escaped) JSON for the row-level data attributes, set via
+      // setAttribute directly rather than through an HTML string — using the
+      // HTML-escaped version here would leave literal "&quot;" in the attribute
+      // and break JSON.parse when read back.
+      tr.style.cursor = 'pointer';
+      tr.setAttribute('data-hole', r.hole);
+      tr.setAttribute('data-u1-point', r.u1Point);
+      tr.setAttribute('data-u2-point', r.u2Point);
+      tr.setAttribute('data-u1-langs', JSON.stringify(r.u1AllLangs || []));
+      tr.setAttribute('data-u2-langs', JSON.stringify(r.u2AllLangs || []));
+
       tr.innerHTML = `
         <td>${holeDisplay}</td>
         <td class="col-border-left user-lang-cell">${u1LangDisplay}</td>
@@ -741,6 +762,28 @@ function sortAndRenderCompareTable(rows, sortField, sortDir, hasUser2, scoringMo
 
 document.getElementById('tableSearch')?.addEventListener('input', () => {
   if (lastCompareResults) renderCompareResults(lastCompareResults);
+});
+
+// Clicking anywhere in the blank space of a compare row (not a link or an
+// already-handled control) opens the diff breakdown modal for that row.
+document.getElementById('resultsBody')?.addEventListener('click', (e) => {
+  if (!lastCompareResults || !lastCompareResults.hasUser2) return;
+  if (e.target.closest('a')) return;
+  if (e.target.closest('.diff-clickable')) return;
+  if (e.target.closest('.extra-medals-btn')) return;
+
+  const tr = e.target.closest('tr[data-hole]');
+  if (!tr) return;
+
+  const hole = tr.getAttribute('data-hole');
+  const u1Point = parseFloat(tr.getAttribute('data-u1-point') || '0');
+  const u2Point = parseFloat(tr.getAttribute('data-u2-point') || '0');
+  const u1Langs = JSON.parse(tr.getAttribute('data-u1-langs') || '[]');
+  const u2Langs = JSON.parse(tr.getAttribute('data-u2-langs') || '[]');
+
+  if (typeof showDiffModal === 'function') {
+    showDiffModal(hole, u1Point, u2Point, u1Langs, u2Langs);
+  }
 });
 
 document.getElementById('scoringSelect')?.addEventListener('change', () => {

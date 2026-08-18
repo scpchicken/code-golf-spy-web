@@ -179,9 +179,9 @@ function downloadMarkdownFile(filename, text) {
 }
 
 function compareMedalCandidates(a, b) {
-  const medalRank = { '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
-  const rankA = medalRank[a.medal] || 5;
-  const rankB = medalRank[b.medal] || 5;
+  const medalRank = { '🦄': 0, '💎': 1, '🥇': 2, '🥈': 3, '🥉': 4, '': 5 };
+  const rankA = medalRank[a.medal] ?? 5;
+  const rankB = medalRank[b.medal] ?? 5;
 
   if (rankA !== rankB) return rankA - rankB;
 
