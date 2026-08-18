@@ -65,24 +65,37 @@ function sortLangsForModal(langsJson) {
   });
 }
 
-function updateLangFilterEditButton() {
-  const editBtn = document.getElementById('editLangFilterBtn');
-  if (!editBtn) return;
+// Every {select, editBtn} pair that shares the single langFilterMode state
+// above (Compare Users page + Custom Leaderboard page). Add a new pair here
+// to hook up another page's controls to the same shared state so all pages
+// always show the current mode and stay in sync with one another.
+const langFilterControlPairs = [
+  { selectId: 'langFilterModeSelect', editBtnId: 'editLangFilterBtn' },
+  { selectId: 'lbLangFilterModeSelect', editBtnId: 'lbEditLangFilterBtn' }
+];
 
-  if (langFilterMode === 'permitted') {
-    editBtn.classList.remove('hidden');
-    editBtn.textContent = `Edit Permitted Languages (${permittedLangsSet.size})`;
-  } else if (langFilterMode === 'banned') {
-    editBtn.classList.remove('hidden');
-    editBtn.textContent = `Edit Banned Languages (${bannedLangsSet.size})`;
-  } else {
-    editBtn.classList.add('hidden');
-  }
+function updateLangFilterEditButton() {
+  langFilterControlPairs.forEach(({ editBtnId }) => {
+    const editBtn = document.getElementById(editBtnId);
+    if (!editBtn) return;
+
+    if (langFilterMode === 'permitted') {
+      editBtn.classList.remove('hidden');
+      editBtn.textContent = `Edit Permitted Languages (${permittedLangsSet.size})`;
+    } else if (langFilterMode === 'banned') {
+      editBtn.classList.remove('hidden');
+      editBtn.textContent = `Edit Banned Languages (${bannedLangsSet.size})`;
+    } else {
+      editBtn.classList.add('hidden');
+    }
+  });
 }
 
 function revertLangFilterSelect() {
-  const select = document.getElementById('langFilterModeSelect');
-  if (select) select.value = langFilterMode;
+  langFilterControlPairs.forEach(({ selectId }) => {
+    const select = document.getElementById(selectId);
+    if (select) select.value = langFilterMode;
+  });
 }
 
 async function openLangFilterModal(mode) {
@@ -183,21 +196,42 @@ function filterLangFilterList(filterText) {
   });
 }
 
-document.getElementById('langFilterModeSelect')?.addEventListener('change', (e) => {
-  const newMode = e.target.value;
+langFilterControlPairs.forEach(({ selectId, editBtnId }) => {
+  document.getElementById(selectId)?.addEventListener('change', (e) => {
+    const newMode = e.target.value;
 
-  if (newMode === 'permitted' || newMode === 'banned') {
-    openLangFilterModal(newMode);
-  } else {
-    langFilterMode = newMode;
-    updateLangFilterEditButton();
-  }
+    if (newMode === 'permitted' || newMode === 'banned') {
+      openLangFilterModal(newMode);
+    } else {
+      langFilterMode = newMode;
+      // Immediately reflect the new mode on every synced dropdown (e.g. the
+      // Compare Users <-> Custom Leaderboard pair), not just the one the
+      // user touched.
+      revertLangFilterSelect();
+      updateLangFilterEditButton();
+    }
+  });
+
+  document.getElementById(editBtnId)?.addEventListener('click', () => {
+    if (langFilterMode === 'permitted' || langFilterMode === 'banned') {
+      openLangFilterModal(langFilterMode);
+    }
+  });
 });
 
-document.getElementById('editLangFilterBtn')?.addEventListener('click', () => {
-  if (langFilterMode === 'permitted' || langFilterMode === 'banned') {
-    openLangFilterModal(langFilterMode);
-  }
+// Keep the (exact-match) Lang Filter text inputs on the Compare Users page
+// and Custom Leaderboard page mirrored, so typing in one immediately
+// updates the other.
+const langFilterTextInputIds = ['langFilterInput', 'lbLangFilterInput'];
+langFilterTextInputIds.forEach(id => {
+  document.getElementById(id)?.addEventListener('input', (e) => {
+    const val = e.target.value;
+    langFilterTextInputIds.forEach(otherId => {
+      if (otherId === id) return;
+      const otherEl = document.getElementById(otherId);
+      if (otherEl && otherEl.value !== val) otherEl.value = val;
+    });
+  });
 });
 
 document.getElementById('langFilterSearchInput')?.addEventListener('input', (e) => {
@@ -245,6 +279,7 @@ document.getElementById('langFilterApplyBtn')?.addEventListener('click', () => {
 
   langFilterMode = langFilterModalMode;
   document.getElementById('langFilterModal')?.classList.add('hidden');
+  revertLangFilterSelect();
   updateLangFilterEditButton();
 });
 

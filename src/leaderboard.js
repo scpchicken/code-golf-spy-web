@@ -7,13 +7,14 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   const minScore = parseFloat(document.getElementById('lbFormulaValue')?.textContent || 750);
   const chiExponent = parseFloat(document.getElementById('lbChiValue')?.textContent || 1);
   const lambdaExponent = parseFloat(document.getElementById('lbLambdaSlider')?.value || 1000);
-  
+  const langFilter = (document.getElementById('lbLangFilterInput')?.value || '').trim().toLowerCase();
+
   const subFileInput = document.getElementById('submissionsFile');
   const holesFileInput = document.getElementById('holesFile');
   const langsFileInput = document.getElementById('langsFile');
 
   if (!inputVal) {
-    alert("Please enter at least one username.");
+    alert("Please enter at least one golfer in the \"Golfers to Rank\" field.");
     return;
   }
 
@@ -46,7 +47,8 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
       langsData,
       minScore,
       chiExponent,
-      lambdaExponent
+      lambdaExponent,
+      langFilter
     );
 
     currentLbSortField = 'points';
@@ -60,7 +62,7 @@ document.getElementById('lbGoBtn')?.addEventListener('click', async () => {
   }
 });
 
-function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, minScore = 750, chiExponent = 1, lambdaExponent = 1000) {
+function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, minScore = 750, chiExponent = 1, lambdaExponent = 1000, langFilter = '') {
   const targetMap = new Map();
   targetUsers.forEach((u, index) => {
     targetMap.set(u.toLowerCase(), { displayName: u, initialRank: index + 1 });
@@ -82,6 +84,7 @@ function processLeaderboardData(jsonData, targetUsers, holesJson, langsJson, min
     const loginLower = login.toLowerCase();
     const byte = Number(x.bytes);
 
+    if (langFilter && lang.toLowerCase() !== langFilter) continue;
     if (validHoles && !validHoles.has(hole)) continue;
     if (validLangs && !validLangs.has(lang)) continue;
 

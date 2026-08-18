@@ -166,16 +166,6 @@
           </div>
 
           <div class="form-group">
-            <label for="holesFile">Holes JSON (Auto-fetches if empty)</label>
-            <input type="file" id="holesFile" accept=".json">
-          </div>
-
-          <div class="form-group">
-            <label for="langsFile">Langs JSON (Auto-fetches if empty)</label>
-            <input type="file" id="langsFile" accept=".json">
-          </div>
-
-          <div class="form-group">
             <label for="langFilterModeSelect">Language / Experimental Filter</label>
             <select id="langFilterModeSelect">
               <option value="default">Exclude Experimental Holes & Langs</option>
@@ -188,6 +178,16 @@
               class="hidden"
               style="margin-top: 6px; font-size: 0.8rem; color: var(--win); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; user-select: none;"
             >Edit Selected Languages</span>
+          </div>
+
+          <div class="form-group">
+            <label for="holesFile">Holes JSON (Auto-fetches if empty)</label>
+            <input type="file" id="holesFile" accept=".json">
+          </div>
+
+          <div class="form-group">
+            <label for="langsFile">Langs JSON (Auto-fetches if empty)</label>
+            <input type="file" id="langsFile" accept=".json">
           </div>
         </div>
 
@@ -330,8 +330,30 @@
           </div>
         </div>
 
-        <div class="button-group" style="margin-top: 1.5rem;">
+        <div class="button-group" style="margin-top: 1.5rem; align-items: center; flex-wrap: wrap; gap: 10px;">
           <button class="btn-submit" id="lbGoBtn">Generate Leaderboard</button>
+
+          <input
+            type="text"
+            id="lbLangFilterInput"
+            placeholder="Lang Filter (Optional) e.g. python"
+            style="height: 38px; width: 200px; flex: 0 0 auto; background-color: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0 0.75rem; font-size: 0.95rem;"
+          >
+
+          <select
+            id="lbLangFilterModeSelect"
+            style="height: 38px; width: 260px; flex: 0 0 auto; background-color: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0 0.75rem; font-size: 0.95rem;"
+          >
+            <option value="default">Exclude Experimental Holes & Langs</option>
+            <option value="experimental">Include Experimental Holes & Langs</option>
+            <option value="permitted">Permitted Languages Only…</option>
+            <option value="banned">Banned Languages…</option>
+          </select>
+          <span
+            id="lbEditLangFilterBtn"
+            class="hidden"
+            style="flex: 0 0 auto; font-size: 0.8rem; color: var(--win); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; user-select: none;"
+          >Edit Selected Languages</span>
         </div>
       </div>
 
