@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,8 +11,7 @@
   <title>Code Golf Leaderboard & Comparison Tool</title>
   <link rel="stylesheet" href="style.css">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-HQQRS8EE5T"></script>
-  <script>window.dataLayer = window.dataLayer || [];function gtag(){
-  dataLayer.push(arguments);};gtag('js', new Date());gtag('config', 'G-HQQRS8EE5T');</script>
+  <script>window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);};gtag('js', new Date());gtag('config', 'G-HQQRS8EE5T');</script>
 </head>
 <body>
   <!-- Full-Width Top Navigation Bar -->
@@ -278,6 +276,19 @@
               placeholder="e.g. Steffan153, scpchicken"
             >
           </div>
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label 
+              for="lbWhitelistedUsersInput" 
+              title="If specified, only submissions from these golfers are used in score calculations, and only these golfers will be ranked."
+            >
+              Whitelisted Golfers (Comma-separated, optional)
+            </label>
+            <input 
+              type="text" 
+              id="lbWhitelistedUsersInput" 
+              placeholder="e.g. zzh1996, scpchicken, JOrE20, Flekay"
+            >
+          </div>
 
           <!-- Base Min Score Formula Slider -->
           <div class="form-group">
@@ -424,6 +435,21 @@
             </select>
           </div>
 
+          <div class="form-group">
+            <label for="queryLangFilterModeSelect">Language / Experimental Filter</label>
+            <select id="queryLangFilterModeSelect">
+              <option value="default">Exclude Experimental Holes & Langs</option>
+              <option value="experimental">Include Experimental Holes & Langs</option>
+              <option value="permitted">Permitted Languages Only…</option>
+              <option value="banned">Banned Languages…</option>
+            </select>
+            <span
+              id="queryEditLangFilterBtn"
+              class="hidden"
+              style="margin-top: 6px; font-size: 0.8rem; color: var(--win); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; user-select: none;"
+            >Edit Selected Languages</span>
+          </div>
+
           <!-- Dynamic Lost Golds Filter Controls -->
           <div id="lostGoldsControls" class="form-group hidden" style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <div>
@@ -474,6 +500,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
           <h3 id="queryResultsTitle" style="margin: 0; color: var(--accent);">Query Results</h3>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button id="groupHistoryByDayBtn" class="btn-secondary hidden">📅 Group by Day</button>
             <input type="text" id="queryTableSearch" class="search-bar" placeholder="Filter hole, lang, or golfer..." style="height: 38px;">
             <button id="exportQueryTxtBtn" class="btn-secondary">📥 Export as TXT Table</button>
           </div>

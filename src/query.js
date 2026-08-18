@@ -10,6 +10,7 @@
   let cachedSubmissionsData = null;
   let cachedHolesData = null;
   let cachedLangsData = null;
+  let solutionHistoryIsGrouped = false;
   let solutionHistoryAllResults = null;
   let solutionHistoryCurrentPage = 1;
   const SOLUTIONS_PER_PAGE = 100;
@@ -38,16 +39,70 @@
     return str.substring(0, 10);
   }
 
-  // Helper: parse submission dates with full timestamp including milliseconds (for solution history)
+  // Helper: parse submission dates into YYYY-MM-DD---HH-MM-SS (for solution history)
   function parseDateStrWithMs(submitted) {
     if (!submitted) return 'Unknown';
+    let d;
     if (typeof submitted === 'number') {
-      const d = new Date(submitted < 1e11 ? submitted * 1000 : submitted);
-      return d.toISOString();
+      d = new Date(submitted < 1e11 ? submitted * 1000 : submitted);
+    } else {
+      d = new Date(submitted);
     }
-    const str = String(submitted);
-    if (str.includes('T')) return str;
-    return str;
+    if (isNaN(d.getTime())) {
+      const str = String(submitted);
+      return str.replace('T', '---').replace(/:/g, '-').slice(0, 19);
+    }
+    const iso = d.toISOString(); // "YYYY-MM-DDTHH:mm:ss.sssZ"
+    const datePart = iso.slice(0, 10);
+    const timePart = iso.slice(11, 19).replace(/:/g, '-');
+    return `${datePart}---${timePart}`;
+  }
+
+  // Helper: Ensure "Group by Day" button is rendered to the left of queryTableSearch
+  function ensureGroupByDayButton() {
+    const queryTableSearch = document.getElementById('queryTableSearch');
+    let btn = document.getElementById('groupByDayBtn');
+
+    if (!queryTableSearch) return;
+
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = 'groupByDayBtn';
+      btn.type = 'button';
+      btn.className = 'btn-secondary';
+      btn.style.cssText = 'margin-right: 8px; padding: 6px 12px; font-size: 0.85rem; cursor: pointer; white-space: nowrap; flex-shrink: 0;';
+
+      if (queryTableSearch.parentNode) {
+        queryTableSearch.parentNode.insertBefore(btn, queryTableSearch);
+      }
+
+      btn.addEventListener('click', () => {
+        solutionHistoryIsGrouped = !solutionHistoryIsGrouped;
+        solutionHistoryCurrentPage = 1;
+        currentQuerySortField = solutionHistoryIsGrouped ? 'date' : 'submitted';
+        currentQuerySortDir = 'desc';
+        renderSolutionHistoryResults();
+      });
+    }
+
+    if (currentQueryType === 'solution_history') {
+      btn.classList.remove('hidden');
+      btn.style.display = 'inline-block';
+      if (solutionHistoryIsGrouped) {
+        btn.textContent = '📅 Grouped by Day (Click to Ungroup)';
+        btn.style.backgroundColor = 'var(--accent, #22c55e)';
+        btn.style.color = '#fff';
+      } else {
+        btn.textContent = '📅 Group by Day';
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+      }
+    } else {
+      if (btn) {
+        btn.classList.add('hidden');
+        btn.style.display = 'none';
+      }
+    }
   }
 
   // Check if current query type is a user medal/count aggregation query
@@ -55,7 +110,7 @@
     return ['bytes_gold_medals', 'bytes_diamonds', 'bytes_unicorns'].includes(type);
   }
 
-  // Attach event listeners safely after DOM is loaded
+ // Attach event listeners safely after DOM is loaded
   function initQueryEvents() {
     const queryGoBtn = document.getElementById('queryGoBtn');
     const queryTypeSelect = document.getElementById('queryTypeSelect');
@@ -92,6 +147,8 @@
       } else {
         solutionHistoryControls?.classList.add('hidden');
       }
+
+      ensureGroupByDayButton();
     };
 
     queryTypeSelect?.addEventListener('change', toggleControls);
@@ -116,7 +173,6 @@
       await new Promise(r => setTimeout(r, 50));
 
       try {
-        // Automatically reads uploaded file or fetches src/solutions.json
         const submissionsData = typeof getSubmissionsData === 'function' ? await getSubmissionsData(subFileInput) : null;
 
         if (!submissionsData) {
@@ -133,11 +189,12 @@
         cachedSubmissionsData = submissionsData;
         cachedHolesData = holesData;
         cachedLangsData = langsData;
+        const includeExperimental = typeof langFilterMode !== 'undefined' && langFilterMode === 'experimental';
 
         if (currentQueryType === 'total_bytes_of_golds_per_day') {
           currentQuerySortField = 'date';
           currentQuerySortDir = 'desc';
-          lastQueryResults = processGoldsPerDay(submissionsData, holesData, langsData);
+          lastQueryResults = processGoldsPerDay(submissionsData, holesData, langsData, includeExperimental);
           renderGoldsPerDayResults();
         } else if (currentQueryType === 'lost_golds_diamonds') {
           const golferFilter = lostGolferInput?.value || '';
@@ -147,7 +204,8 @@
             holesData,
             langsData,
             golferFilter,
-            medalTypeFilter
+            medalTypeFilter,
+            includeExperimental
           );
           renderLostMedalsResults(lastQueryResults);
         } else if (currentQueryType === 'medal_mismatch') {
@@ -160,15 +218,22 @@
             holesData,
             langsData,
             username,
-            langFilter
+            langFilter,
+            includeExperimental
           );
           renderMedalMismatchResults(lastQueryResults);
         } else if (currentQueryType === 'solution_history') {
-          const userFilter = (solutionHistoryUserInput?.value || '').trim().toLowerCase();
+          const userFilter = (solutionHistoryUserInput?.value || '').trim();
           solutionHistoryCurrentPage = 1;
-          currentQuerySortField = 'submitted';
+          currentQuerySortField = solutionHistoryIsGrouped ? 'date' : 'submitted';
           currentQuerySortDir = 'desc';
-          solutionHistoryAllResults = processSolutionHistory(submissionsData, userFilter);
+          solutionHistoryAllResults = processSolutionHistory(
+            submissionsData,
+            userFilter,
+            holesData,
+            langsData,
+            includeExperimental
+          );
           renderSolutionHistoryResults();
         } else if (isUserQueryType(currentQueryType)) {
           currentQuerySortField = 'count';
@@ -177,7 +242,8 @@
             submissionsData,
             currentQueryType,
             holesData,
-            langsData
+            langsData,
+            includeExperimental
           );
           renderQueryResults(lastQueryResults, currentQueryType);
         } else {
@@ -187,7 +253,8 @@
             submissionsData,
             currentQueryType,
             holesData,
-            langsData
+            langsData,
+            includeExperimental
           );
           renderQueryResults(lastQueryResults, currentQueryType);
         }
@@ -203,20 +270,21 @@
       if (currentQueryType === 'lost_golds_diamonds' && cachedSubmissionsData) {
         const golferFilter = lostGolferInput?.value || '';
         const medalTypeFilter = lostTypeSelect?.value || 'all';
+        const includeExperimental = typeof langFilterMode !== 'undefined' && langFilterMode === 'experimental';
         lastQueryResults = processLostMedals(
           cachedSubmissionsData,
           cachedHolesData,
           cachedLangsData,
           golferFilter,
-          medalTypeFilter
+          medalTypeFilter,
+          includeExperimental
         );
         renderLostMedalsResults(lastQueryResults);
       }
     };
 
-    // Note: "Golfer Name" and "Lost Record Type" intentionally do NOT
-    // auto-recompute results on every keystroke - the user presses "Run
-    // Query" (or Ctrl+Enter) to apply changes, same as every other query type.
+    lostGolferInput?.addEventListener('input', triggerLostFilterUpdate);
+    lostTypeSelect?.addEventListener('change', triggerLostFilterUpdate);
 
     // Search input dispatch
     document.getElementById('queryTableSearch')?.addEventListener('input', () => {
@@ -226,12 +294,14 @@
         triggerLostFilterUpdate();
       } else if (currentQueryType === 'medal_mismatch') {
         sortAndRenderMismatchBody();
+      } else if (currentQueryType === 'solution_history') {
+        renderSolutionHistoryResults();
       } else {
         if (lastQueryResults) applyQueryFilterAndRender();
       }
     });
 
-    // Event Delegation for Table Click Events
+    // Table click delegation
     document.getElementById('queryResultsBody')?.addEventListener('click', (e) => {
       if (currentQueryType === 'total_bytes_of_golds_per_day') {
         const btn = e.target.closest('.gold-change-btn');
@@ -260,7 +330,7 @@
       }
     });
 
-    // Event Delegation for Lost Medals Row Click
+    // Lost medals row click delegation
     document.getElementById('multiTableContainer')?.addEventListener('click', (e) => {
       if (currentQueryType !== 'lost_golds_diamonds' || !lastQueryResults) return;
       if (e.target.tagName === 'A') return;
@@ -283,23 +353,16 @@
       }
     });
 
-    // Export Handler
+    // Export handler
     document.getElementById('exportQueryTxtBtn')?.addEventListener('click', handleExport);
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initQueryEvents);
-  } else {
-    initQueryEvents();
-  }
-
   /* ==========================================================================
      1. TOTAL BYTES OF GOLDS PER DAY
      ========================================================================== */
 
-  function processGoldsPerDay(jsonData, holesJson, langsJson) {
-    const validHoles = computeValidHoles(holesJson);
-    const validLangs = computeValidLangs(langsJson);
+function processGoldsPerDay(jsonData, holesJson, langsJson, includeExperimental = false) {
+    const validHoles = computeValidHoles(holesJson, includeExperimental);
+    const validLangs = computeValidLangs(langsJson, includeExperimental);
 
     const bytesSubmissions = jsonData.filter(x => {
       if (x.scoring !== 'bytes') return false;
@@ -615,9 +678,9 @@
      2. LOST DIAMONDS / GOLDS / UNICORNS QUERY
      ========================================================================== */
 
-  function processLostMedals(jsonData, holesJson, langsJson, golferFilter = '', medalTypeFilter = 'all') {
-    const validHoles = computeValidHoles(holesJson);
-    const validLangs = computeValidLangs(langsJson);
+function processLostMedals(jsonData, holesJson, langsJson, golferFilter = '', medalTypeFilter = 'all', includeExperimental = false) {
+    const validHoles = computeValidHoles(holesJson, includeExperimental);
+    const validLangs = computeValidLangs(langsJson, includeExperimental);
 
     const bytesSubs = jsonData.filter(x => {
       if (x.scoring !== 'bytes') return false;
@@ -760,7 +823,6 @@
       });
     }
 
-    // Mutual exclusivity applied to timestamps so no events overlap in buckets
     const events24h = filterEvents(lossEvents.filter(e => e.timestamp >= cutoff24h));
     const eventsWeek = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffWeek && e.timestamp < cutoff24h));
     const eventsMonth = filterEvents(lossEvents.filter(e => e.timestamp >= cutoffMonth && e.timestamp < cutoffWeek));
@@ -778,7 +840,8 @@
       eventsYear: sortDesc(eventsYear)
     };
   }
-function renderLostMedalsResults(lostResults) {
+
+  function renderLostMedalsResults(lostResults) {
     const card = document.getElementById('queryResultsCard');
     const titleEl = document.getElementById('queryResultsTitle');
     const statsContainer = document.getElementById('queryStatsContainer');
@@ -812,19 +875,13 @@ function renderLostMedalsResults(lostResults) {
       `;
     }
 
-    // Helper to dynamically shrink font size and enforce column padding/spacing
     const getDynamicStyle = (htmlText) => {
-      // Strip HTML to calculate the true visible text length
       const plainText = String(htmlText).replace(/<[^>]+>/g, '');
       const len = plainText.length;
-      
-      // Start shrinking if longer than 12 characters, down to a minimum of 0.65rem
       let size = 1;
       if (len > 12) {
         size = Math.max(0.65, 1 - (len - 12) * 0.02);
       }
-      
-      // padding-right creates the gap, overflow handles edge-case bleed-over
       return `font-size: ${size}rem; white-space: nowrap; padding-right: 15px; overflow: hidden; text-overflow: ellipsis;`;
     };
 
@@ -902,10 +959,9 @@ function renderLostMedalsResults(lostResults) {
   /* ==========================================================================
      3. STANDARD SOLUTIONS QUERIES
      ========================================================================== */
-
-  function runSolutionsQuery(jsonData, queryType, holesJson, langsJson) {
-    const validHoles = computeValidHoles(holesJson);
-    const validLangs = computeValidLangs(langsJson);
+function runSolutionsQuery(jsonData, queryType, holesJson, langsJson, includeExperimental = false) {
+    const validHoles = computeValidHoles(holesJson, includeExperimental);
+    const validLangs = computeValidLangs(langsJson, includeExperimental);
 
     const bytesSubs = jsonData.filter(x => {
       if (x.scoring !== 'bytes') return false;
@@ -982,17 +1038,6 @@ function renderLostMedalsResults(lostResults) {
 
         if (queryType === 'longest_golds') {
           for (const h of stat.holders) {
-            /* 
-             * =========================================================================
-             * HUGE COMMENT AS REQUESTED:
-             * DO NOT CHANGE THIS LOGIC IN THE FUTURE!
-             * If a solution is unique (stat.holders.length === 1), we must check if 
-             * they are the ONLY solver in this hole/lang combo (totalSolvers === 1). 
-             * If they are the ONLY solver, it's a UNICORN 🦄.
-             * If there are multiple solvers but they are the unique best, it's a DIAMOND 💎.
-             * If there are multiple people holding the best score, it's a GOLD 🥇.
-             * =========================================================================
-             */
             let medalType = `🥇 (${stat.holders.length})`;
             if (isUnique) {
               if (totalSolvers === 1) {
@@ -1010,7 +1055,6 @@ function renderLostMedalsResults(lostResults) {
         }
       }
 
-      // We pass the full length sorted list back so that stats show the true global count
       list.sort((a, b) => b.bytes - a.bytes);
 
       return { type: queryType, results: list };
@@ -1151,7 +1195,6 @@ function renderLostMedalsResults(lostResults) {
       return 0;
     });
 
-    // Cap output logic so only the top 100 rows currently displayed render 
     if (!isUserQueryType(lastQueryResults.type)) {
       items = items.slice(0, 100);
     }
@@ -1194,9 +1237,6 @@ function renderLostMedalsResults(lostResults) {
 
   /* ==========================================================================
      4. MEDAL MISMATCH: BYTES VS CHARS
-     Finds hole/lang combos where a specific golfer holds a medal (unicorn,
-     diamond, or gold) under one scoring mode but not the other - e.g. gold
-     in "Fibonacci" Python bytes but nothing in "Fibonacci" Python chars.
      ========================================================================== */
 
   function computeMedalForStat(stat, solverCount) {
@@ -1205,10 +1245,11 @@ function renderLostMedalsResults(lostResults) {
     return '🥇';
   }
 
-  function processMedalMismatch(jsonData, holesJson, langsJson, username, langFilter = '') {
-    const validHoles = computeValidHoles(holesJson);
-    const validLangs = computeValidLangs(langsJson);
+function processMedalMismatch(jsonData, holesJson, langsJson, username, langFilter = '', includeExperimental = false) {
+  const validHoles = computeValidHoles(holesJson);
+const validLangs = computeValidLangs(langsJson);
 
+  // ... rest of function remains unchanged
     const statsBytes = new Map();
     const statsChars = new Map();
     const usernameLower = username.trim().toLowerCase();
@@ -1254,9 +1295,6 @@ function renderLostMedalsResults(lostResults) {
       const bMedal = bHas ? computeMedalForStat(bStat, bStat.solvers.size) : '';
       const cMedal = cHas ? computeMedalForStat(cStat, cStat.solvers.size) : '';
 
-      // Only surface it when the golfer's medal status actually differs
-      // between the two scoring modes (has one but not the other, or holds
-      // a different medal tier in each).
       if (bMedal === cMedal) continue;
 
       const [hole, lang] = key.split('::');
@@ -1278,15 +1316,22 @@ function renderLostMedalsResults(lostResults) {
     return { type: 'medal_mismatch', username: username.trim(), results };
   }
 
-  function processSolutionHistory(jsonData, userFilter = '') {
-    // Filter to only bytes submissions, sorted by date descending (most recent first)
-    let results = jsonData.filter(x => x.scoring === 'bytes');
+  function processSolutionHistory(jsonData, userFilter = '', holesJson = null, langsJson = null, includeExperimental = false) {
+    const validHoles = computeValidHoles(holesJson, includeExperimental);
+    const validLangs = computeValidLangs(langsJson, includeExperimental);
 
-    if (userFilter) {
-      results = results.filter(x => x.login.toLowerCase().includes(userFilter));
+    let results = jsonData.filter(x => {
+      if (x.scoring !== 'bytes') return false;
+      if (validHoles && !validHoles.has(x.hole)) return false;
+      if (validLangs && !validLangs.has(x.lang)) return false;
+      return true;
+    });
+
+    const uf = (userFilter || '').trim().toLowerCase();
+    if (uf) {
+      results = results.filter(x => (x.login || '').toLowerCase().includes(uf));
     }
 
-    // Sort by submitted date descending (most recent first)
     results.sort((a, b) => {
       const dateA = new Date(a.submitted || 0).getTime();
       const dateB = new Date(b.submitted || 0).getTime();
@@ -1301,6 +1346,8 @@ function renderLostMedalsResults(lostResults) {
   }
 
   function renderSolutionHistoryResults() {
+    ensureGroupByDayButton();
+
     const card = document.getElementById('queryResultsCard');
     const titleEl = document.getElementById('queryResultsTitle');
     const statsContainer = document.getElementById('queryStatsContainer');
@@ -1313,16 +1360,79 @@ function renderLostMedalsResults(lostResults) {
     if (!card || !table || !tbody || !solutionHistoryAllResults) return;
 
     if (titleEl) {
+      const modeTxt = solutionHistoryIsGrouped ? ' (Grouped by Day)' : '';
       titleEl.textContent = solutionHistoryAllResults.userFilter 
-        ? `Solution History (Bytes): ${escapeHtml(solutionHistoryAllResults.userFilter)}`
-        : 'Solution History (Bytes)';
+        ? `Solution History (Bytes): ${escapeHtml(solutionHistoryAllResults.userFilter)}${modeTxt}`
+        : `Solution History (Bytes)${modeTxt}`;
     }
 
-    if (statsContainer) statsContainer.innerHTML = '';
     if (singleTableContainer) singleTableContainer.classList.remove('hidden');
     if (multiTableContainer) multiTableContainer.classList.add('hidden');
 
-    // Set up proper headers for solution history with sorting
+    let dataToDisplay = [];
+    if (solutionHistoryIsGrouped) {
+      const dayMap = new Map();
+      solutionHistoryAllResults.results.forEach(x => {
+        const dateStr = parseDateStr(x.submitted);
+        const login = x.login;
+        const key = `${dateStr}::${login.toLowerCase()}`;
+        if (!dayMap.has(key)) {
+          dayMap.set(key, {
+            date: dateStr,
+            login: login,
+            count: 0,
+            totalBytes: 0
+          });
+        }
+        const item = dayMap.get(key);
+        item.count += 1;
+        item.totalBytes += Number(x.bytes || 0);
+      });
+      dataToDisplay = Array.from(dayMap.values());
+    } else {
+      dataToDisplay = [...solutionHistoryAllResults.results];
+    }
+
+    const searchText = (document.getElementById('queryTableSearch')?.value || '').toLowerCase();
+    if (searchText) {
+      if (solutionHistoryIsGrouped) {
+        dataToDisplay = dataToDisplay.filter(r => 
+          r.login.toLowerCase().includes(searchText) || 
+          r.date.toLowerCase().includes(searchText) ||
+          String(r.count).includes(searchText) ||
+          String(r.totalBytes).includes(searchText)
+        );
+      } else {
+        dataToDisplay = dataToDisplay.filter(r =>
+          (r.hole || '').toLowerCase().includes(searchText) ||
+          (r.lang || '').toLowerCase().includes(searchText) ||
+          (r.login || '').toLowerCase().includes(searchText) ||
+          String(r.bytes || '').includes(searchText) ||
+          parseDateStrWithMs(r.submitted).toLowerCase().includes(searchText)
+        );
+      }
+    }
+
+    if (statsContainer) {
+      if (solutionHistoryIsGrouped) {
+        const totalDays = dataToDisplay.length;
+        const totalBytesSum = dataToDisplay.reduce((acc, r) => acc + r.totalBytes, 0);
+        const totalSolvesSum = dataToDisplay.reduce((acc, r) => acc + r.count, 0);
+        statsContainer.innerHTML = `
+          <div class="stat-box"><div class="val">${totalDays.toLocaleString()}</div><div class="lbl">Days Active</div></div>
+          <div class="stat-box"><div class="val">${totalSolvesSum.toLocaleString()}</div><div class="lbl">Total Byte Solves</div></div>
+          <div class="stat-box"><div class="val">${totalBytesSum.toLocaleString()} B</div><div class="lbl">Total Bytes</div></div>
+        `;
+      } else {
+        const totalSolves = dataToDisplay.length;
+        const totalBytesSum = dataToDisplay.reduce((acc, r) => acc + Number(r.bytes || 0), 0);
+        statsContainer.innerHTML = `
+          <div class="stat-box"><div class="val">${totalSolves.toLocaleString()}</div><div class="lbl">Total Byte Solves</div></div>
+          <div class="stat-box"><div class="val">${totalBytesSum.toLocaleString()} B</div><div class="lbl">Total Bytes</div></div>
+        `;
+      }
+    }
+
     if (thead) {
       const renderTh = (id, label, fieldName, align = 'left') => {
         const isCurrent = currentQuerySortField === fieldName;
@@ -1331,40 +1441,68 @@ function renderLostMedalsResults(lostResults) {
         return `<th id="${id}" style="text-align: ${align}; cursor: pointer; user-select: none; ${colorStyle}">${label}${arrow}</th>`;
       };
 
-      thead.innerHTML = `
-        <tr>
-          <th style="width: 50px;">#</th>
-          ${renderTh('thSHole', 'Hole', 'hole', 'left')}
-          ${renderTh('thSLang', 'Language', 'lang', 'left')}
-          ${renderTh('thSGolfer', 'Golfer', 'login', 'left')}
-          ${renderTh('thSBytes', 'Bytes', 'bytes', 'right')}
-          ${renderTh('thSDate', 'Date Submitted', 'submitted', 'left')}
-        </tr>
-      `;
+      if (solutionHistoryIsGrouped) {
+        thead.innerHTML = `
+          <tr>
+            <th style="width: 50px;">#</th>
+            ${renderTh('thSCount', 'Solves', 'count', 'right')}
+            ${renderTh('thSGolfer', 'Golfer', 'login', 'left')}
+            ${renderTh('thSTotalBytes', 'Total Bytes', 'totalBytes', 'right')}
+            ${renderTh('thSDate', 'Date', 'date', 'left')}
+          </tr>
+        `;
 
-      const bindSHSort = (id, fieldName, defaultDir = 'desc') => {
-        const el = document.getElementById(id);
-        el?.addEventListener('click', () => {
-          if (currentQuerySortField === fieldName) {
-            currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
-          } else {
-            currentQuerySortField = fieldName;
-            currentQuerySortDir = defaultDir;
-          }
-          renderSolutionHistoryResults();
-        });
-      };
+        const bindSHSort = (id, fieldName, defaultDir = 'desc') => {
+          const el = document.getElementById(id);
+          el?.addEventListener('click', () => {
+            if (currentQuerySortField === fieldName) {
+              currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+              currentQuerySortField = fieldName;
+              currentQuerySortDir = defaultDir;
+            }
+            renderSolutionHistoryResults();
+          });
+        };
 
-      bindSHSort('thSHole', 'hole', 'asc');
-      bindSHSort('thSLang', 'lang', 'asc');
-      bindSHSort('thSGolfer', 'login', 'asc');
-      bindSHSort('thSBytes', 'bytes', 'desc');
-      bindSHSort('thSDate', 'submitted', 'desc');
+        bindSHSort('thSCount', 'count', 'desc');
+        bindSHSort('thSGolfer', 'login', 'asc');
+        bindSHSort('thSTotalBytes', 'totalBytes', 'desc');
+        bindSHSort('thSDate', 'date', 'desc');
+      } else {
+        thead.innerHTML = `
+          <tr>
+            <th style="width: 50px;">#</th>
+            ${renderTh('thSHole', 'Hole', 'hole', 'left')}
+            ${renderTh('thSLang', 'Language', 'lang', 'left')}
+            ${renderTh('thSGolfer', 'Golfer', 'login', 'left')}
+            ${renderTh('thSBytes', 'Bytes', 'bytes', 'right')}
+            ${renderTh('thSDate', 'Date Submitted', 'submitted', 'left')}
+          </tr>
+        `;
+
+        const bindSHSort = (id, fieldName, defaultDir = 'desc') => {
+          const el = document.getElementById(id);
+          el?.addEventListener('click', () => {
+            if (currentQuerySortField === fieldName) {
+              currentQuerySortDir = currentQuerySortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+              currentQuerySortField = fieldName;
+              currentQuerySortDir = defaultDir;
+            }
+            renderSolutionHistoryResults();
+          });
+        };
+
+        bindSHSort('thSHole', 'hole', 'asc');
+        bindSHSort('thSLang', 'lang', 'asc');
+        bindSHSort('thSGolfer', 'login', 'asc');
+        bindSHSort('thSBytes', 'bytes', 'desc');
+        bindSHSort('thSDate', 'submitted', 'desc');
+      }
     }
 
-    // Apply sorting to results
-    let sortedResults = [...solutionHistoryAllResults.results];
-    sortedResults.sort((a, b) => {
+    dataToDisplay.sort((a, b) => {
       let valA = a[currentQuerySortField];
       let valB = b[currentQuerySortField];
 
@@ -1382,55 +1520,61 @@ function renderLostMedalsResults(lostResults) {
       return 0;
     });
 
-    // Calculate display range
     const startIdx = (solutionHistoryCurrentPage - 1) * SOLUTIONS_PER_PAGE;
     const endIdx = startIdx + SOLUTIONS_PER_PAGE;
-    const displayItems = sortedResults.slice(startIdx, endIdx);
-    const hasMorePages = endIdx < sortedResults.length;
+    const displayItems = dataToDisplay.slice(startIdx, endIdx);
+    const hasMorePages = endIdx < dataToDisplay.length;
 
-    // Render table rows
     tbody.innerHTML = '';
     displayItems.forEach((r, idx) => {
       const tr = document.createElement('tr');
       const rowNum = startIdx + idx + 1;
-      const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
-      const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
-      const dateStr = parseDateStrWithMs(r.submitted);
-      
-      tr.innerHTML = `
-        <td>${rowNum}</td>
-        <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a></td>
-        <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(r.lang)}</a></td>
-        <td>${typeof getGolferLink === 'function' ? getGolferLink(r.login) : escapeHtml(r.login)}</td>
-        <td style="text-align: right;"><strong>${r.bytes} B</strong></td>
-        <td>${escapeHtml(dateStr)}</td>
-      `;
+
+      if (solutionHistoryIsGrouped) {
+        tr.innerHTML = `
+          <td>${rowNum}</td>
+          <td style="text-align: right;"><strong>${r.count.toLocaleString()}</strong></td>
+          <td>${typeof getGolferLink === 'function' ? getGolferLink(r.login) : escapeHtml(r.login)}</td>
+          <td style="text-align: right;"><strong>${r.totalBytes.toLocaleString()} B</strong></td>
+          <td>${escapeHtml(r.date)}</td>
+        `;
+      } else {
+        const holeUrl = `https://code.golf/${encodeURIComponent(r.hole)}`;
+        const langUrl = `https://code.golf/${encodeURIComponent(r.hole)}#${encodeURIComponent(r.lang)}`;
+        const dateStr = parseDateStrWithMs(r.submitted);
+
+        tr.innerHTML = `
+          <td>${rowNum}</td>
+          <td><a href="${holeUrl}" target="_blank" rel="noopener noreferrer" class="golf-link"><strong>${escapeHtml(r.hole)}</strong></a></td>
+          <td><a href="${langUrl}" target="_blank" rel="noopener noreferrer" class="golf-link-clean" style="font-weight: bold; color: #4da6ff;">${escapeHtml(r.lang)}</a></td>
+          <td>${typeof getGolferLink === 'function' ? getGolferLink(r.login) : escapeHtml(r.login)}</td>
+          <td style="text-align: right;"><strong>${r.bytes} B</strong></td>
+          <td>${escapeHtml(dateStr)}</td>
+        `;
+      }
       tbody.appendChild(tr);
     });
 
-    // Remove old load more button if it exists
     const oldLoadMoreContainer = document.getElementById('solutionHistoryLoadMoreContainer');
     if (oldLoadMoreContainer) oldLoadMoreContainer.remove();
 
-    // Add load more button if there are more pages
     if (hasMorePages) {
       const loadMoreContainer = document.createElement('div');
       loadMoreContainer.id = 'solutionHistoryLoadMoreContainer';
       loadMoreContainer.style.cssText = 'margin-top: 1.5rem; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;';
-      
+
       const loadMoreBtn = document.createElement('button');
       loadMoreBtn.className = 'btn-submit';
-      const totalPages = Math.ceil(solutionHistoryAllResults.results.length / SOLUTIONS_PER_PAGE);
+      const totalPages = Math.ceil(dataToDisplay.length / SOLUTIONS_PER_PAGE);
       loadMoreBtn.textContent = `Load More (Page ${solutionHistoryCurrentPage + 1} of ${totalPages})`;
       loadMoreBtn.addEventListener('click', () => {
         solutionHistoryCurrentPage++;
         renderSolutionHistoryResults();
-        // Scroll to table
         setTimeout(() => {
           table.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 100);
       });
-      
+
       loadMoreContainer.appendChild(loadMoreBtn);
       table.parentElement.after(loadMoreContainer);
     }
@@ -1532,7 +1676,6 @@ function renderLostMedalsResults(lostResults) {
       );
     }
 
-    // Best-medal-first ranking used only when sorting by the bytes/chars columns.
     const medalRank = { '🦄': 0, '💎': 1, '🥇': 2, '': 3 };
 
     items.sort((a, b) => {
@@ -1726,7 +1869,6 @@ function renderLostMedalsResults(lostResults) {
     } else {
       const headers = ['#', 'Hole', 'Language', 'Golfer', 'Bytes', 'Type'];
       
-      // Keep export to 100 max to mirror UI changes
       const exportItems = isUserQueryType(lastQueryResults.type) ? lastQueryResults.results : lastQueryResults.results.slice(0, 100);
 
       const rows = exportItems.map((r, i) => [String(i + 1), r.hole, r.lang, r.golfer, `${r.bytes} B`, r.type]);
@@ -1737,5 +1879,10 @@ function renderLostMedalsResults(lostResults) {
         downloadMarkdownFile('query_results.md', lines.join('\n'));
       }
     }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initQueryEvents);
+  } else {
+    initQueryEvents();
   }
 })();

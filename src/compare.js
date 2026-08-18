@@ -71,7 +71,8 @@ function sortLangsForModal(langsJson) {
 // always show the current mode and stay in sync with one another.
 const langFilterControlPairs = [
   { selectId: 'langFilterModeSelect', editBtnId: 'editLangFilterBtn' },
-  { selectId: 'lbLangFilterModeSelect', editBtnId: 'lbEditLangFilterBtn' }
+  { selectId: 'lbLangFilterModeSelect', editBtnId: 'lbEditLangFilterBtn' },
+  { selectId: 'queryLangFilterModeSelect', editBtnId: 'queryEditLangFilterBtn' }
 ];
 
 function updateLangFilterEditButton() {
