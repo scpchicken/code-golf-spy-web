@@ -83,7 +83,7 @@ document.getElementById('dlHolesBtn')?.addEventListener('click', () => window.op
 document.getElementById('dlLangsBtn')?.addEventListener('click', () => window.open('https://code.golf/api/langs', '_blank'));
 
 // Slider Helper Setup
-function setupSlider(sliderId, valueId, onUpdate) {
+function setupSlider(sliderId, valueId, onUpdate, updateIntervalMs = 150) {
   const slider = document.getElementById(sliderId);
   const valueDisplay = document.getElementById(valueId);
   if (!slider || !valueDisplay) return;
@@ -93,14 +93,47 @@ function setupSlider(sliderId, valueId, onUpdate) {
     return val;
   };
 
-  // Trigger live score updates dynamically while dragging slider
+  // 'input' fires on every tiny pointer movement while dragging - far more
+  // often than we actually want to re-run the heavy recompute + table
+  // re-render. Throttle onUpdate() to at most once every `updateIntervalMs`
+  // (default 150ms) while still updating the number label instantly on every
+  // event, so dragging still feels responsive without hammering the CPU.
+  let timeoutId = null;
+  let lastRunTime = 0;
+
+  const scheduleUpdate = () => {
+    const now = Date.now();
+    const elapsed = now - lastRunTime;
+
+    if (elapsed >= updateIntervalMs) {
+      lastRunTime = now;
+      if (onUpdate) onUpdate();
+      return;
+    }
+
+    if (timeoutId !== null) return;
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      lastRunTime = Date.now();
+      if (onUpdate) onUpdate();
+    }, updateIntervalMs - elapsed);
+  };
+
   slider.addEventListener('input', (e) => {
     valueDisplay.textContent = getDisplayVal(e.target.value);
-    if (onUpdate) onUpdate();
+    scheduleUpdate();
   });
 
   slider.addEventListener('change', (e) => {
     valueDisplay.textContent = getDisplayVal(e.target.value);
+    // On release, drop any pending throttled update and run one final
+    // update immediately so the released value is always reflected exactly
+    // (never stuck on a stale in-between value).
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    lastRunTime = Date.now();
     if (onUpdate) onUpdate();
   });
 
@@ -162,10 +195,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSlider('lbLambdaSlider', 'lbLambdaValue', updateLeaderboard);
   setupSlider('lbDiamondSlider', 'lbDiamondValue', updateLeaderboard);
 
-  // Show Startup Modal conditionally (skip if src/solutions.json auto-loads)
+  // Kick off solutions/holes/langs fetches together, immediately, in the
+  // background (not gated on the startup modal existing/being shown).
+  // getSubmissionsData/getOrFetchJson cache by URL, so every later "Go" click
+  // across Compare/Leaderboard/Query reuses this same cached data instead of
+  // making another network request (an uploaded file always overrides it).
+  const solutionsPromise = getSubmissionsData(null).catch(() => null);
+  const holesPromise = getOrFetchJson(null, 'https://code.golf/api/holes', 'holes.json').catch(() => null);
+  const langsPromise = getOrFetchJson(null, 'https://code.golf/api/langs', 'langs.json').catch(() => null);
+
+  // Show Startup Modal conditionally (skip if src/solutions.json auto-loads).
   if (typeof initialModal !== 'undefined' && initialModal) {
     try {
-      const autoData = await getOrFetchJson(null, './solutions.json', 'solutions.json') 
+      const autoData = await solutionsPromise;
       if (autoData) {
         initialModal.classList.add('hidden');
       } else {
@@ -174,5 +216,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       initialModal.classList.remove('hidden');
     }
+  }
+
+  // Make sure holes & langs are cached in memory too before the user ever
+  // presses a "Go" button (non-fatal if they fail; "Go" handlers will retry).
+  try {
+    await Promise.all([holesPromise, langsPromise]);
+  } catch (err) {
+    // Non-fatal: individual page "Go" handlers will retry via getOrFetchJson.
   }
 });

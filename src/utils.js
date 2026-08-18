@@ -131,7 +131,9 @@ async function getSubmissionsData(fileInput) {
     return await readJsonFile(file);
   }
 
-  // Attempt auto-fetching from default relative paths to src/solutions.json
+  // Attempt auto-fetching from default relative paths to src/solutions.json.
+  // getOrFetchJson caches by resolved URL, so this only hits the network once
+  // per page load no matter how many times getSubmissionsData is called.
   let data = await getOrFetchJson(null, 'solutions.json', 'solutions.json');
   if (!data) {
     data = await getOrFetchJson(null, '../test/solutions.json', 'solutions.json');
@@ -139,19 +141,44 @@ async function getSubmissionsData(fileInput) {
   return data;
 }
 
+// In-memory cache of network fetches, keyed by the resolved absolute URL.
+// Stores the in-flight/completed Promise (not just the resolved value) so
+// that concurrent callers for the same resource share a single request
+// instead of racing to fire off duplicates.
+const _jsonFetchCache = new Map();
+
+function _resolveFetchCacheKey(url) {
+  try {
+    return new URL(url, document.baseURI).href;
+  } catch (err) {
+    return url;
+  }
+}
+
 async function getOrFetchJson(fileInput, fetchUrl, fileName) {
   if (fileInput && fileInput.files && fileInput.files[0]) {
+    // An uploaded file always takes priority over any cached/fetched data.
     return await readJsonFile(fileInput.files[0]);
   }
 
-  try {
-    const resp = await fetch(fetchUrl);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return await resp.json();
-  } catch (err) {
-    console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}.`);
-    return null;
+  const cacheKey = _resolveFetchCacheKey(fetchUrl);
+  if (_jsonFetchCache.has(cacheKey)) {
+    return await _jsonFetchCache.get(cacheKey);
   }
+
+  const fetchPromise = (async () => {
+    try {
+      const resp = await fetch(fetchUrl);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.json();
+    } catch (err) {
+      console.warn(`Could not auto-fetch ${fileName} from ${fetchUrl}.`);
+      return null;
+    }
+  })();
+
+  _jsonFetchCache.set(cacheKey, fetchPromise);
+  return await fetchPromise;
 }
 
 function downloadJsonFile(filename = 'solutions.json', data) {
